@@ -39,6 +39,23 @@ button:hover {
   background: #244b4d;
 }
 
+.button-link {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #2f5f62;
+  border-radius: 8px;
+  background: #2f5f62;
+  color: #ffffff;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: #244b4d;
+}
+
 input,
 textarea {
   width: 100%;
@@ -87,7 +104,8 @@ textarea {
   margin-bottom: 28px;
 }
 
-.page-toolbar button {
+.page-toolbar button,
+.page-toolbar .button-link {
   min-width: 76px;
 }
 
@@ -177,9 +195,12 @@ h3 {
   margin-top: 20px;
 }
 
-.action-grid button {
+.action-grid button,
+.action-grid .button-link {
   min-height: 96px;
   padding: 18px;
+  align-items: flex-start;
+  flex-direction: column;
   text-align: left;
 }
 

@@ -1,8 +1,6 @@
-import { useState } from "react";
+import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { defaultSects } from "./data/defaultSects";
 import { defaultTechniques } from "./data/defaultTechniques";
-
-type ViewName = "home" | "events" | "journeys" | "cultivation" | "techniques" | "knowledge";
 
 const profileStats = [
   { label: "境界", value: "炼气一层" },
@@ -65,69 +63,60 @@ const knowledgeTree = [
 ];
 
 function App() {
-  const [currentView, setCurrentView] = useState<ViewName>("home");
-  const [selectedSectId, setSelectedSectId] = useState(defaultSects[0].id);
-  const [selectedTechniqueId, setSelectedTechniqueId] = useState(
-    defaultTechniques[0].id,
-  );
-
-  const selectedSect =
-    defaultSects.find((sect) => sect.id === selectedSectId) ?? defaultSects[0];
-
-  const selectedTechnique =
-    defaultTechniques.find((technique) => technique.id === selectedTechniqueId) ??
-    defaultTechniques[0];
-
   return (
     <main className="app-shell">
-      {currentView === "home" && <HomePage onNavigate={setCurrentView} />}
-
-      {currentView === "events" && (
-        <EventsPage onBack={() => setCurrentView("home")} />
-      )}
-
-      {currentView === "journeys" && (
-        <JourneysPage onBack={() => setCurrentView("home")} />
-      )}
-
-      {currentView === "cultivation" && (
-        <CultivationPage
-          onBack={() => setCurrentView("home")}
-          onEnterTechniques={(sectId) => {
-            setSelectedSectId(sectId);
-            setCurrentView("techniques");
-          }}
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/events" element={<EventsPage />} />
+        <Route path="/journeys" element={<JourneysPage />} />
+        <Route path="/cultivation" element={<CultivationPage />} />
+        <Route
+          path="/cultivation/sects/:sectId"
+          element={<SectTechniquesRoute />}
         />
-      )}
-
-      {currentView === "techniques" && (
-        <TechniquesPage
-          sect={selectedSect}
-          onBack={() => setCurrentView("cultivation")}
-          onEnterKnowledge={(techniqueId) => {
-            setSelectedTechniqueId(techniqueId);
-            setCurrentView("knowledge");
-          }}
+        <Route
+          path="/cultivation/sects/:sectId/techniques/:techniqueId"
+          element={<KnowledgeRoute />}
         />
-      )}
-
-      {currentView === "knowledge" && (
-        <KnowledgePage
-          sectName={selectedSect.name}
-          techniqueName={selectedTechnique.name}
-          techniqueId={selectedTechnique.id}
-          onBack={() => setCurrentView("techniques")}
-        />
-      )}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </main>
   );
 }
 
-type HomePageProps = {
-  onNavigate: (view: ViewName) => void;
-};
+function SectTechniquesRoute() {
+  const { sectId } = useParams();
+  const sect = defaultSects.find((item) => item.id === sectId);
 
-function HomePage({ onNavigate }: HomePageProps) {
+  if (!sect) {
+    return <Navigate to="/cultivation" replace />;
+  }
+
+  return <TechniquesPage sect={sect} />;
+}
+
+function KnowledgeRoute() {
+  const { sectId, techniqueId } = useParams();
+  const sect = defaultSects.find((item) => item.id === sectId);
+  const technique = defaultTechniques.find(
+    (item) => item.id === techniqueId && item.sectId === sectId,
+  );
+
+  if (!sect || !technique) {
+    return <Navigate to="/cultivation" replace />;
+  }
+
+  return (
+    <KnowledgePage
+      sectId={sect.id}
+      sectName={sect.name}
+      techniqueName={technique.name}
+      techniqueId={technique.id}
+    />
+  );
+}
+
+function HomePage() {
   return (
     <section className="page-panel">
       <p className="eyebrow">Personal Cultivation Dashboard</p>
@@ -150,18 +139,18 @@ function HomePage({ onNavigate }: HomePageProps) {
       </div>
 
       <div className="action-grid" aria-label="核心系统入口">
-        <button type="button" onClick={() => onNavigate("events")}>
+        <Link className="button-link" to="/events">
           <span>事件</span>
           <strong>试炼与截止日期</strong>
-        </button>
-        <button type="button" onClick={() => onNavigate("journeys")}>
+        </Link>
+        <Link className="button-link" to="/journeys">
           <span>游历</span>
           <strong>阅读、电影和体验</strong>
-        </button>
-        <button type="button" onClick={() => onNavigate("cultivation")}>
+        </Link>
+        <Link className="button-link" to="/cultivation">
           <span>修炼</span>
           <strong>门派、功法和知识点</strong>
-        </button>
+        </Link>
       </div>
 
       <div className="preview-grid">
@@ -182,14 +171,10 @@ function HomePage({ onNavigate }: HomePageProps) {
   );
 }
 
-type SubPageProps = {
-  onBack: () => void;
-};
-
-function EventsPage({ onBack }: SubPageProps) {
+function EventsPage() {
   return (
     <section className="page-panel">
-      <PageToolbar title="事件界面" onBack={onBack} />
+      <PageToolbar title="事件界面" backTo="/" />
 
       <div className="two-column-layout">
         <section className="content-section">
@@ -220,10 +205,10 @@ function EventsPage({ onBack }: SubPageProps) {
   );
 }
 
-function JourneysPage({ onBack }: SubPageProps) {
+function JourneysPage() {
   return (
     <section className="page-panel">
-      <PageToolbar title="游历界面" onBack={onBack} />
+      <PageToolbar title="游历界面" backTo="/" />
 
       <div className="two-column-layout">
         <section className="content-section">
@@ -258,14 +243,10 @@ function JourneysPage({ onBack }: SubPageProps) {
   );
 }
 
-type CultivationPageProps = SubPageProps & {
-  onEnterTechniques: (sectId: string) => void;
-};
-
-function CultivationPage({ onBack, onEnterTechniques }: CultivationPageProps) {
+function CultivationPage() {
   return (
     <section className="page-panel">
-      <PageToolbar title="修炼界面" onBack={onBack} />
+      <PageToolbar title="修炼界面" backTo="/" />
 
       <div className="page-heading">
         <p className="intro">
@@ -301,9 +282,12 @@ function CultivationPage({ onBack, onEnterTechniques }: CultivationPageProps) {
                   <dd>{techniqueCount}</dd>
                 </div>
               </dl>
-              <button type="button" onClick={() => onEnterTechniques(sect.id)}>
+              <Link
+                className="button-link"
+                to={`/cultivation/sects/${sect.id}`}
+              >
                 查看功法
-              </button>
+              </Link>
             </article>
           );
         })}
@@ -312,19 +296,18 @@ function CultivationPage({ onBack, onEnterTechniques }: CultivationPageProps) {
   );
 }
 
-type TechniquesPageProps = SubPageProps & {
+type TechniquesPageProps = {
   sect: (typeof defaultSects)[number];
-  onEnterKnowledge: (techniqueId: string) => void;
 };
 
-function TechniquesPage({ sect, onBack, onEnterKnowledge }: TechniquesPageProps) {
+function TechniquesPage({ sect }: TechniquesPageProps) {
   const techniques = defaultTechniques.filter(
     (technique) => technique.sectId === sect.id,
   );
 
   return (
     <section className="page-panel">
-      <PageToolbar title={`${sect.name}功法界面`} onBack={onBack} />
+      <PageToolbar title={`${sect.name}功法界面`} backTo="/cultivation" />
 
       <div className="page-heading">
         <div>
@@ -376,9 +359,12 @@ function TechniquesPage({ sect, onBack, onEnterKnowledge }: TechniquesPageProps)
                 <dd>{technique.currentValue}</dd>
               </div>
             </dl>
-            <button type="button" onClick={() => onEnterKnowledge(technique.id)}>
+            <Link
+              className="button-link"
+              to={`/cultivation/sects/${sect.id}/techniques/${technique.id}`}
+            >
               进入知识点
-            </button>
+            </Link>
           </article>
         ))}
       </div>
@@ -386,17 +372,18 @@ function TechniquesPage({ sect, onBack, onEnterKnowledge }: TechniquesPageProps)
   );
 }
 
-type KnowledgePageProps = SubPageProps & {
+type KnowledgePageProps = {
+  sectId: string;
   sectName: string;
   techniqueName: string;
   techniqueId: string;
 };
 
 function KnowledgePage({
+  sectId,
   sectName,
   techniqueName,
   techniqueId,
-  onBack,
 }: KnowledgePageProps) {
   const selectedTree = knowledgeTree.find(
     (tree) => tree.techniqueId === techniqueId,
@@ -419,7 +406,10 @@ function KnowledgePage({
 
   return (
     <section className="page-panel">
-      <PageToolbar title="知识点修炼界面" onBack={onBack} />
+      <PageToolbar
+        title="知识点修炼界面"
+        backTo={`/cultivation/sects/${sectId}`}
+      />
 
       <div className="knowledge-layout">
         <section className="content-section">
@@ -514,15 +504,15 @@ function RecordCard({ item }: RecordCardProps) {
 
 type PageToolbarProps = {
   title: string;
-  onBack: () => void;
+  backTo: string;
 };
 
-function PageToolbar({ title, onBack }: PageToolbarProps) {
+function PageToolbar({ title, backTo }: PageToolbarProps) {
   return (
     <header className="page-toolbar">
-      <button type="button" onClick={onBack}>
+      <Link className="button-link" to={backTo}>
         返回
-      </button>
+      </Link>
       <h1>{title}</h1>
     </header>
   );
