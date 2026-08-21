@@ -1,6 +1,24 @@
+import { useState } from "react";
 import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
+import {
+  PracticeRecordForm,
+  type PracticeRecordFormSubmission,
+} from "./components/PracticeRecordForm";
+import { PracticeRecordsList } from "./components/PracticeRecordsList";
+import {
+  getDefaultKnowledgePointsByTechnique,
+} from "./data/defaultKnowledgePoints";
 import { defaultSects } from "./data/defaultSects";
+import {
+  findTechniquePracticeDefaults,
+} from "./data/defaultTechniquePracticeDefaults";
 import { defaultTechniques } from "./data/defaultTechniques";
+import type {
+  KnowledgePoint,
+  PracticeRecord,
+  PracticeRecordKnowledgePoint,
+  PracticeRecordKnowledgePointDraft,
+} from "./types/domain";
 
 const profileStats = [
   { label: "境界", value: "炼气一层" },
@@ -35,34 +53,75 @@ const journeyPreviews = [
   },
 ];
 
-const knowledgeTree = [
-  {
-    techniqueId: "math_analysis",
-    technique: "数学分析",
-    chapters: [
-      {
-        name: "第一章 函数与极限",
-        points: ["函数概念", "数列极限", "函数极限"],
-      },
-      {
-        name: "第二章 连续与导数",
-        points: ["连续性", "导数定义", "微分法则"],
-      },
-    ],
-  },
-  {
-    techniqueId: "phil_western",
-    technique: "西方哲学史",
-    chapters: [
-      {
-        name: "近代哲学开端",
-        points: ["笛卡尔方法论怀疑", "我思故我在", "身心二元论"],
-      },
-    ],
-  },
-];
+type KnowledgeChapter = {
+  chapterCode: string;
+  chapterName: string;
+  knowledgePoints: KnowledgePoint[];
+};
+
+function groupKnowledgePointsByChapter(
+  knowledgePoints: KnowledgePoint[],
+): KnowledgeChapter[] {
+  const chapters = new Map<string, KnowledgeChapter>();
+
+  knowledgePoints.forEach((knowledgePoint) => {
+    const existingChapter = chapters.get(knowledgePoint.chapterCode);
+
+    if (existingChapter) {
+      existingChapter.knowledgePoints.push(knowledgePoint);
+      return;
+    }
+
+    chapters.set(knowledgePoint.chapterCode, {
+      chapterCode: knowledgePoint.chapterCode,
+      chapterName: knowledgePoint.chapter ?? "默认章节",
+      knowledgePoints: [knowledgePoint],
+    });
+  });
+
+  return Array.from(chapters.values());
+}
 
 function App() {
+  const [practiceRecords, setPracticeRecords] = useState<PracticeRecord[]>([]);
+  const [practiceRecordKnowledgePoints, setPracticeRecordKnowledgePoints] =
+    useState<PracticeRecordKnowledgePoint[]>([]);
+
+  function addPracticeRecord(
+    record: PracticeRecord,
+    recordKnowledgePoints: PracticeRecordKnowledgePoint[],
+  ) {
+    setPracticeRecords((currentRecords) => [record, ...currentRecords]);
+    setPracticeRecordKnowledgePoints((currentLinks) => [
+      ...recordKnowledgePoints,
+      ...currentLinks,
+    ]);
+  }
+
+  function softDeletePracticeRecord(recordId: string) {
+    const deletedAt = new Date().toISOString();
+
+    setPracticeRecords((currentRecords) =>
+      currentRecords.map((record) =>
+        record.id === recordId
+          ? { ...record, deletedAt, updatedAt: deletedAt }
+          : record,
+      ),
+    );
+  }
+
+  function restorePracticeRecord(recordId: string) {
+    const updatedAt = new Date().toISOString();
+
+    setPracticeRecords((currentRecords) =>
+      currentRecords.map((record) =>
+        record.id === recordId
+          ? { ...record, deletedAt: undefined, updatedAt }
+          : record,
+      ),
+    );
+  }
+
   return (
     <main className="app-shell">
       <Routes>
@@ -76,7 +135,15 @@ function App() {
         />
         <Route
           path="/cultivation/sects/:sectId/techniques/:techniqueId"
-          element={<KnowledgeRoute />}
+          element={
+            <KnowledgeRoute
+              practiceRecords={practiceRecords}
+              practiceRecordKnowledgePoints={practiceRecordKnowledgePoints}
+              onAddPracticeRecord={addPracticeRecord}
+              onDeletePracticeRecord={softDeletePracticeRecord}
+              onRestorePracticeRecord={restorePracticeRecord}
+            />
+          }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -95,7 +162,24 @@ function SectTechniquesRoute() {
   return <TechniquesPage sect={sect} />;
 }
 
-function KnowledgeRoute() {
+type KnowledgeRouteProps = {
+  practiceRecords: PracticeRecord[];
+  practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[];
+  onAddPracticeRecord: (
+    record: PracticeRecord,
+    recordKnowledgePoints: PracticeRecordKnowledgePoint[],
+  ) => void;
+  onDeletePracticeRecord: (recordId: string) => void;
+  onRestorePracticeRecord: (recordId: string) => void;
+};
+
+function KnowledgeRoute({
+  practiceRecords,
+  practiceRecordKnowledgePoints,
+  onAddPracticeRecord,
+  onDeletePracticeRecord,
+  onRestorePracticeRecord,
+}: KnowledgeRouteProps) {
   const { sectId, techniqueId } = useParams();
   const sect = defaultSects.find((item) => item.id === sectId);
   const technique = defaultTechniques.find(
@@ -106,12 +190,28 @@ function KnowledgeRoute() {
     return <Navigate to="/cultivation" replace />;
   }
 
+  const techniqueRecords = practiceRecords.filter(
+    (record) => record.techniqueId === technique.id,
+  );
+  const techniqueRecordIds = new Set(
+    techniqueRecords.map((record) => record.id),
+  );
+  const techniqueRecordKnowledgePoints = practiceRecordKnowledgePoints.filter(
+    (link) => techniqueRecordIds.has(link.recordId),
+  );
+
   return (
     <KnowledgePage
+      key={technique.id}
       sectId={sect.id}
       sectName={sect.name}
       techniqueName={technique.name}
       techniqueId={technique.id}
+      practiceRecords={techniqueRecords}
+      practiceRecordKnowledgePoints={techniqueRecordKnowledgePoints}
+      onAddPracticeRecord={onAddPracticeRecord}
+      onDeletePracticeRecord={onDeletePracticeRecord}
+      onRestorePracticeRecord={onRestorePracticeRecord}
     />
   );
 }
@@ -139,6 +239,10 @@ function HomePage() {
       </div>
 
       <div className="action-grid" aria-label="核心系统入口">
+        <Link className="button-link" to="/cultivation">
+          <span>修炼</span>
+          <strong>门派、功法和知识点</strong>
+        </Link>
         <Link className="button-link" to="/events">
           <span>事件</span>
           <strong>试炼与截止日期</strong>
@@ -146,10 +250,6 @@ function HomePage() {
         <Link className="button-link" to="/journeys">
           <span>游历</span>
           <strong>阅读、电影和体验</strong>
-        </Link>
-        <Link className="button-link" to="/cultivation">
-          <span>修炼</span>
-          <strong>门派、功法和知识点</strong>
         </Link>
       </div>
 
@@ -377,6 +477,14 @@ type KnowledgePageProps = {
   sectName: string;
   techniqueName: string;
   techniqueId: string;
+  practiceRecords: PracticeRecord[];
+  practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[];
+  onAddPracticeRecord: (
+    record: PracticeRecord,
+    recordKnowledgePoints: PracticeRecordKnowledgePoint[],
+  ) => void;
+  onDeletePracticeRecord: (recordId: string) => void;
+  onRestorePracticeRecord: (recordId: string) => void;
 };
 
 function KnowledgePage({
@@ -384,25 +492,102 @@ function KnowledgePage({
   sectName,
   techniqueName,
   techniqueId,
+  practiceRecords,
+  practiceRecordKnowledgePoints,
+  onAddPracticeRecord,
+  onDeletePracticeRecord,
+  onRestorePracticeRecord,
 }: KnowledgePageProps) {
-  const selectedTree = knowledgeTree.find(
-    (tree) => tree.techniqueId === techniqueId,
+  const knowledgePoints = getDefaultKnowledgePointsByTechnique(techniqueId);
+  const [knowledgePointAllocations, setKnowledgePointAllocations] = useState<
+    PracticeRecordKnowledgePointDraft[]
+  >([]);
+  const [formResetKey, setFormResetKey] = useState(0);
+  const selectedKnowledgePointIdSet = new Set(
+    knowledgePointAllocations.map((allocation) => allocation.knowledgePointId),
   );
+  const visibleChapters = groupKnowledgePointsByChapter(
+    knowledgePoints,
+  );
+  const selectedKnowledgePoints = knowledgePoints.filter((knowledgePoint) =>
+    selectedKnowledgePointIdSet.has(knowledgePoint.id),
+  );
+  const practiceDefaults = findTechniquePracticeDefaults(techniqueId);
 
-  const visibleTree = selectedTree
-    ? [selectedTree]
-    : [
-        {
-          techniqueId,
-          technique: techniqueName,
-          chapters: [
-            {
-              name: "默认章节",
-              points: ["待创建知识点"],
-            },
-          ],
-        },
-      ];
+  function toggleKnowledgePoint(knowledgePointId: string) {
+    setKnowledgePointAllocations((currentAllocations) => {
+      const isSelected = currentAllocations.some(
+        (allocation) => allocation.knowledgePointId === knowledgePointId,
+      );
+      const nextKnowledgePointIds = isSelected
+        ? currentAllocations
+            .filter(
+              (allocation) =>
+                allocation.knowledgePointId !== knowledgePointId,
+            )
+            .map((allocation) => allocation.knowledgePointId)
+        : [
+            ...currentAllocations.map(
+              (allocation) => allocation.knowledgePointId,
+            ),
+            knowledgePointId,
+          ];
+
+      if (nextKnowledgePointIds.length === 0) {
+        return [];
+      }
+
+      const equalWeight = 1 / nextKnowledgePointIds.length;
+
+      return nextKnowledgePointIds.map((id) => ({
+        knowledgePointId: id,
+        allocationWeight: equalWeight,
+      }));
+    });
+  }
+
+  function updateKnowledgePointAllocation(
+    knowledgePointId: string,
+    allocationWeight: number,
+  ) {
+    const normalizedWeight = Math.min(Math.max(allocationWeight, 0), 1);
+
+    setKnowledgePointAllocations((currentAllocations) =>
+      currentAllocations.map((allocation) =>
+        allocation.knowledgePointId === knowledgePointId
+          ? { ...allocation, allocationWeight: normalizedWeight }
+          : allocation,
+      ),
+    );
+  }
+
+  function submitPracticeRecord(submission: PracticeRecordFormSubmission) {
+    const {
+      knowledgePointAllocations: submittedAllocations,
+      ...recordValues
+    } = submission;
+    const createdAt = new Date().toISOString();
+    const recordId = crypto.randomUUID();
+    const record: PracticeRecord = {
+      id: recordId,
+      sectId,
+      techniqueId,
+      ...recordValues,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    const recordKnowledgePoints: PracticeRecordKnowledgePoint[] =
+      submittedAllocations.map((allocation) => ({
+        id: crypto.randomUUID(),
+        recordId,
+        knowledgePointId: allocation.knowledgePointId,
+        allocationWeight: allocation.allocationWeight,
+      }));
+
+    onAddPracticeRecord(record, recordKnowledgePoints);
+    setKnowledgePointAllocations([]);
+    setFormResetKey((currentKey) => currentKey + 1);
+  }
 
   return (
     <section className="page-panel">
@@ -420,44 +605,98 @@ function KnowledgePage({
                 知识点属于当前功法，先按章节做文件夹式层级展示，后续再升级成可点亮的图形知识树。
               </p>
             </div>
-            <button type="button">直接记录修炼</button>
           </div>
 
           <div className="knowledge-tree">
-            {visibleTree.map((technique) => (
-              <article key={technique.technique}>
-                <h2>{technique.technique}</h2>
-                {technique.chapters.map((chapter) => (
-                  <details key={chapter.name} open>
-                    <summary>{chapter.name}</summary>
+            <article>
+              <h2>{techniqueName}</h2>
+              {visibleChapters.length > 0 ? (
+                visibleChapters.map((chapter) => (
+                  <details key={chapter.chapterCode} open>
+                    <summary>{chapter.chapterName}</summary>
                     <ul>
-                      {chapter.points.map((point) => (
-                        <li key={point}>
-                          <button type="button">{point}</button>
+                      {chapter.knowledgePoints.map((knowledgePoint) => (
+                        <li key={knowledgePoint.id}>
+                          <button
+                            type="button"
+                            aria-pressed={selectedKnowledgePointIdSet.has(
+                              knowledgePoint.id,
+                            )}
+                            onClick={() =>
+                              toggleKnowledgePoint(knowledgePoint.id)
+                            }
+                          >
+                            {knowledgePoint.name}
+                          </button>
                         </li>
                       ))}
                     </ul>
                   </details>
-                ))}
-              </article>
-            ))}
+                ))
+              ) : (
+                <p>当前功法尚未创建知识点。</p>
+              )}
+            </article>
           </div>
+
+          <PracticeRecordsList
+            records={practiceRecords}
+            recordKnowledgePoints={practiceRecordKnowledgePoints}
+            knowledgePoints={knowledgePoints}
+            onDelete={onDeletePracticeRecord}
+            onRestore={onRestorePracticeRecord}
+          />
         </section>
 
         <aside className="side-panel">
           <h2>知识点详情</h2>
           <p>点击知识点后，这里会显示说明、当前进度、最近修炼记录。</p>
-          <div className="placeholder-form">
-            <label>
-              修炼类型
-              <input value="练习 / 笔记 / 思考 / 测试 / 巩固" readOnly />
-            </label>
-            <label>
-              本次记录
-              <textarea value="这里以后记录该知识点下的修炼内容。" readOnly />
-            </label>
-            <button type="button">记录到当前知识点</button>
-          </div>
+          {practiceDefaults ? (
+            <>
+              <section
+                className="practice-rule-summary"
+                aria-label={`${techniqueName}默认修炼规则`}
+              >
+                <h3>当前功法默认规则</h3>
+                <dl>
+                  <div>
+                    <dt>练习</dt>
+                    <dd>{practiceDefaults.requiredExerciseCount} 题</dd>
+                  </div>
+                  <div>
+                    <dt>笔记</dt>
+                    <dd>{practiceDefaults.requiredNoteCount} 个</dd>
+                  </div>
+                  <div>
+                    <dt>思考</dt>
+                    <dd>{practiceDefaults.requiredThinkingCount} 次</dd>
+                  </div>
+                  <div>
+                    <dt>复习间隔</dt>
+                    <dd>
+                      {practiceDefaults.reviewSchedule.intervalsDays.join("、")} 天
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+              <PracticeRecordForm
+                key={`${techniqueId}-${formResetKey}`}
+                techniqueId={techniqueId}
+                techniqueName={techniqueName}
+                practiceDefaults={practiceDefaults}
+                selectedKnowledgePoints={selectedKnowledgePoints}
+                knowledgePointAllocations={knowledgePointAllocations}
+                onKnowledgePointAllocationChange={
+                  updateKnowledgePointAllocation
+                }
+                onSubmit={submitPracticeRecord}
+              />
+            </>
+          ) : (
+            <p className="practice-rule-missing">
+              当前功法尚未配置修炼规则。
+            </p>
+          )}
         </aside>
       </div>
     </section>

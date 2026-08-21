@@ -29,6 +29,7 @@ export interface Technique { // 定义功法信息
   sectId: string; // 所属门派 id
   name: string; // 功法显示名称
   description: string; // 功法说明
+  courseValueCoefficient: number; // 相对基准功法的课程体量与难度系数，可手动调整
   manaWeight: number; // 法力收益倾向，通常为 0 到 1
   insightWeight: number; // 神识收益倾向，通常为 0 到 1
   soulWeight: number; // 神魂收益倾向，通常为 0 到 1
@@ -63,7 +64,11 @@ export interface KnowledgePoint { // 定义知识点信息
   requiredExerciseCount: number; // 达成当前目标所需练习数量
   requiredNoteCount: number; // 达成当前目标所需笔记数量
   requiredThinkingCount: number; // 达成当前目标所需思考数量
-  requiredTestCount: number; // 达成当前目标所需测试数量
+  reviewStatus: KnowledgeReviewStatus; // 当前复习状态，由时间和复习记录派生
+  reviewStage: number; // 当前复习阶段，对应有效间隔数组下标
+  reviewIntervalsOverride?: number[]; // 知识点自定义复习间隔天数；未设置时使用功法规则
+  lastReviewedAt?: string; // 最近一次复习时间，可选
+  nextReviewAt?: string; // 下一次计划复习时间，可选
   manaWeight: number; // 法力收益分配权重，通常为 0 到 1
   insightWeight: number; // 神识收益分配权重，通常为 0 到 1
   lastPracticedAt?: string; // 最后修炼时间，可选
@@ -76,20 +81,62 @@ export interface PracticeRecord { // 定义修炼记录信息
   id: string; // 修炼记录唯一 id
   sectId: string; // 关联门派 id
   techniqueId: string; // 关联功法 id
-  knowledgePointId?: string; // 关联知识点 id，可选
   recordType: PracticeRecordType; // 修炼记录类型
   title: string; // 记录标题
   content?: string; // 备注、心得或复盘内容，可选
   durationMinutes: number; // 修炼耗时，单位分钟
   quantity: number; // 完成数量，例如题数、篇数、条数
-  accuracy?: number; // 正确率，可选，建议用 0 到 1
+  unit: string; // 数量单位，例如题、条、篇、次或分钟
+  accuracy?: number; // 正确率，可选，只作为学习质量证据，不影响经验
   qualityScore?: number; // 质量评分，可选，建议用 0 到 100
+  difficultyMultiplier?: number; // 本次任务难度倍率，可选，测试经验计算时使用
+  reviewResult?: ReviewRecallResult; // 复习结果，可选，仅复习记录使用
+  suggestedExperienceGain: number; // 系统按当前功法规则计算的建议经验值
+  experienceGain: number; // 用户最终确认的功法经验值
   manaGain: number; // 本次获得法力
   insightGain: number; // 本次获得神识
   soulGain: number; // 本次获得神魂
+  valueSource: PracticeValueSource; // 收益采用功法默认值还是手动调整值
+  adjustmentReason?: string; // 手动调整收益时的原因，可选
   practicedAt: string; // 实际修炼时间
+  deletedAt?: string; // 软删除时间；存在时不参与统计
   createdAt: string; // 创建时间，使用 ISO 字符串
   updatedAt: string; // 更新时间，使用 ISO 字符串
+}
+
+export interface PracticeRecordKnowledgePoint { // 修炼记录与知识点的多对多关联
+  id: string; // 关联记录唯一 id
+  recordId: string; // 修炼记录 id
+  knowledgePointId: string; // 知识点 id
+  allocationWeight: number; // 本次修炼分配给该知识点的比例，通常为 0 到 1
+}
+
+export interface PracticeRecordKnowledgePointDraft { // 表单提交前的知识点分配草案
+  knowledgePointId: string; // 已选知识点 id
+  allocationWeight: number; // 本次修炼分配给该知识点的比例，通常为 0 到 1
+}
+
+export interface TechniquePracticeDefaults { // 每门功法独立的修炼表单默认规则
+  techniqueId: string; // 所属功法 id
+  recordTypeDefaults: Record<PracticeRecordType, PracticeTypeDefaults>; // 各记录类型的最低要求比例和收益权重
+  requiredExerciseCount: number; // 新知识点默认练习要求
+  requiredNoteCount: number; // 新知识点默认笔记要求
+  requiredThinkingCount: number; // 新知识点默认思考要求
+  reviewSchedule: ReviewScheduleRule; // 当前功法的默认复习间隔规则
+  createdAt: string; // 创建时间，使用 ISO 字符串
+  updatedAt: string; // 更新时间，使用 ISO 字符串
+}
+
+export interface ReviewScheduleRule { // 功法默认复习计划
+  intervalsDays: number[]; // 各阶段间隔天数，例如 2、7、21、60、180、365
+  graceRatio: number; // 到期宽限比例，例如 0.2 表示前后约 20%
+}
+
+export interface PracticeTypeDefaults { // 某门功法下某类修炼的默认值
+  requirementRatio: number; // 达到该类基础要求所需经验相对知识点基础值的比例；测试为 0
+  baseExperiencePerUnit?: number; // 独立的单位基础经验，可选；当前用于测试题目
+  manaWeight: number; // 默认法力权重，通常为 0 到 1
+  insightWeight: number; // 默认神识权重，通常为 0 到 1
 }
 
 export interface Event { // 定义事件信息
@@ -191,6 +238,14 @@ export type KnowledgeGranularity = "rough" | "normal" | "detailed";
 export type KnowledgeStatus = "not_started" | "in_progress" | "completed" | "decayed";
 
 export type PracticeRecordType = "exercise" | "note" | "thinking" | "test" | "review";
+
+export type PracticeValueSource = "technique_default" | "manual";
+
+export type RuleUpdateScope = "all_records" | "default_records_only" | "future_records_only";
+
+export type KnowledgeReviewStatus = "not_scheduled" | "not_due" | "due" | "overdue";
+
+export type ReviewRecallResult = "forgotten" | "effortful" | "recalled";
 
 export type EventType = "exam" | "course_project" | "breakthrough_exam" | "long_project" | "custom";
 
