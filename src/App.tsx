@@ -19,13 +19,13 @@ import type {
   PracticeRecordKnowledgePoint,
   PracticeRecordKnowledgePointDraft,
 } from "./types/domain";
-
-const profileStats = [
-  { label: "境界", value: "炼气一层" },
-  { label: "法力", value: "0" },
-  { label: "神识", value: "0" },
-  { label: "神魂", value: "0" },
-];
+import {
+  calculatePracticeStats,
+  type KnowledgePointPracticeStats,
+  type ProfilePracticeStats,
+  type SectPracticeStats,
+  type TechniquePracticeStats,
+} from "./utils/practiceStats";
 
 const eventPreviews = [
   {
@@ -86,6 +86,10 @@ function App() {
   const [practiceRecords, setPracticeRecords] = useState<PracticeRecord[]>([]);
   const [practiceRecordKnowledgePoints, setPracticeRecordKnowledgePoints] =
     useState<PracticeRecordKnowledgePoint[]>([]);
+  const practiceStats = calculatePracticeStats(
+    practiceRecords,
+    practiceRecordKnowledgePoints,
+  );
 
   function addPracticeRecord(
     record: PracticeRecord,
@@ -125,18 +129,32 @@ function App() {
   return (
     <main className="app-shell">
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route
+          path="/"
+          element={<HomePage profileStats={practiceStats.profileStats} />}
+        />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/journeys" element={<JourneysPage />} />
-        <Route path="/cultivation" element={<CultivationPage />} />
+        <Route
+          path="/cultivation"
+          element={
+            <CultivationPage sectStatsById={practiceStats.sectStatsById} />
+          }
+        />
         <Route
           path="/cultivation/sects/:sectId"
-          element={<SectTechniquesRoute />}
+          element={
+            <SectTechniquesRoute
+              sectStatsById={practiceStats.sectStatsById}
+              techniqueStatsById={practiceStats.techniqueStatsById}
+            />
+          }
         />
         <Route
           path="/cultivation/sects/:sectId/techniques/:techniqueId"
           element={
             <KnowledgeRoute
+              knowledgePointStatsById={practiceStats.knowledgePointStatsById}
               practiceRecords={practiceRecords}
               practiceRecordKnowledgePoints={practiceRecordKnowledgePoints}
               onAddPracticeRecord={addPracticeRecord}
@@ -151,7 +169,15 @@ function App() {
   );
 }
 
-function SectTechniquesRoute() {
+type SectTechniquesRouteProps = {
+  sectStatsById: Record<string, SectPracticeStats>;
+  techniqueStatsById: Record<string, TechniquePracticeStats>;
+};
+
+function SectTechniquesRoute({
+  sectStatsById,
+  techniqueStatsById,
+}: SectTechniquesRouteProps) {
   const { sectId } = useParams();
   const sect = defaultSects.find((item) => item.id === sectId);
 
@@ -159,10 +185,17 @@ function SectTechniquesRoute() {
     return <Navigate to="/cultivation" replace />;
   }
 
-  return <TechniquesPage sect={sect} />;
+  return (
+    <TechniquesPage
+      sect={sect}
+      sectStatsById={sectStatsById}
+      techniqueStatsById={techniqueStatsById}
+    />
+  );
 }
 
 type KnowledgeRouteProps = {
+  knowledgePointStatsById: Record<string, KnowledgePointPracticeStats>;
   practiceRecords: PracticeRecord[];
   practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[];
   onAddPracticeRecord: (
@@ -174,6 +207,7 @@ type KnowledgeRouteProps = {
 };
 
 function KnowledgeRoute({
+  knowledgePointStatsById,
   practiceRecords,
   practiceRecordKnowledgePoints,
   onAddPracticeRecord,
@@ -207,6 +241,7 @@ function KnowledgeRoute({
       sectName={sect.name}
       techniqueName={technique.name}
       techniqueId={technique.id}
+      knowledgePointStatsById={knowledgePointStatsById}
       practiceRecords={techniqueRecords}
       practiceRecordKnowledgePoints={techniqueRecordKnowledgePoints}
       onAddPracticeRecord={onAddPracticeRecord}
@@ -216,7 +251,18 @@ function KnowledgeRoute({
   );
 }
 
-function HomePage() {
+type HomePageProps = {
+  profileStats: ProfilePracticeStats;
+};
+
+function HomePage({ profileStats }: HomePageProps) {
+  const displayedProfileStats = [
+    { label: "境界", value: "炼气一层" },
+    { label: "法力", value: profileStats.totalMana.toString() },
+    { label: "神识", value: profileStats.totalInsight.toString() },
+    { label: "神魂", value: profileStats.totalSoul.toString() },
+  ];
+
   return (
     <section className="page-panel">
       <p className="eyebrow">Personal Cultivation Dashboard</p>
@@ -230,7 +276,7 @@ function HomePage() {
       </div>
 
       <div className="status-grid" aria-label="个人属性面板">
-        {profileStats.map((stat) => (
+        {displayedProfileStats.map((stat) => (
           <article key={stat.label}>
             <span>{stat.label}</span>
             <strong>{stat.value}</strong>
@@ -343,7 +389,11 @@ function JourneysPage() {
   );
 }
 
-function CultivationPage() {
+type CultivationPageProps = {
+  sectStatsById: Record<string, SectPracticeStats>;
+};
+
+function CultivationPage({ sectStatsById }: CultivationPageProps) {
   return (
     <section className="page-panel">
       <PageToolbar title="修炼界面" backTo="/" />
@@ -360,6 +410,9 @@ function CultivationPage() {
           const techniqueCount = defaultTechniques.filter(
             (technique) => technique.sectId === sect.id,
           ).length;
+          const sectStats = sectStatsById[sect.id];
+          const totalMana = sectStats?.totalMana ?? 0;
+          const totalInsight = sectStats?.totalInsight ?? 0;
 
           return (
             <article className="sect-card" key={sect.id}>
@@ -371,11 +424,11 @@ function CultivationPage() {
               <dl>
                 <div>
                   <dt>法力</dt>
-                  <dd>{sect.mana}</dd>
+                  <dd>{totalMana}</dd>
                 </div>
                 <div>
                   <dt>神识</dt>
-                  <dd>{sect.insight}</dd>
+                  <dd>{totalInsight}</dd>
                 </div>
                 <div>
                   <dt>功法</dt>
@@ -398,12 +451,21 @@ function CultivationPage() {
 
 type TechniquesPageProps = {
   sect: (typeof defaultSects)[number];
+  sectStatsById: Record<string, SectPracticeStats>;
+  techniqueStatsById: Record<string, TechniquePracticeStats>;
 };
 
-function TechniquesPage({ sect }: TechniquesPageProps) {
+function TechniquesPage({
+  sect,
+  sectStatsById,
+  techniqueStatsById,
+}: TechniquesPageProps) {
   const techniques = defaultTechniques.filter(
     (technique) => technique.sectId === sect.id,
   );
+  const sectStats = sectStatsById[sect.id];
+  const totalMana = sectStats?.totalMana ?? 0;
+  const totalInsight = sectStats?.totalInsight ?? 0;
 
   return (
     <section className="page-panel">
@@ -425,11 +487,11 @@ function TechniquesPage({ sect }: TechniquesPageProps) {
         </article>
         <article>
           <span>法力</span>
-          <strong>{sect.mana}</strong>
+          <strong>{totalMana}</strong>
         </article>
         <article>
           <span>神识</span>
-          <strong>{sect.insight}</strong>
+          <strong>{totalInsight}</strong>
         </article>
         <article>
           <span>功法数量</span>
@@ -438,35 +500,40 @@ function TechniquesPage({ sect }: TechniquesPageProps) {
       </div>
 
       <div className="technique-grid">
-        {techniques.map((technique) => (
-          <article className="technique-card" key={technique.id}>
-            <div>
-              <span>第 {technique.currentLayer} / {technique.maxLayer} 层</span>
-              <h2>{technique.name}</h2>
-              <p>{technique.description}</p>
-            </div>
-            <dl>
+        {techniques.map((technique) => {
+          const techniqueStats = techniqueStatsById[technique.id];
+          const currentValue = techniqueStats?.totalExperience ?? 0;
+
+          return (
+            <article className="technique-card" key={technique.id}>
               <div>
-                <dt>法力倾向</dt>
-                <dd>{Math.round(technique.manaWeight * 100)}%</dd>
+                <span>第 {technique.currentLayer} / {technique.maxLayer} 层</span>
+                <h2>{technique.name}</h2>
+                <p>{technique.description}</p>
               </div>
-              <div>
-                <dt>神识倾向</dt>
-                <dd>{Math.round(technique.insightWeight * 100)}%</dd>
-              </div>
-              <div>
-                <dt>当前数值</dt>
-                <dd>{technique.currentValue}</dd>
-              </div>
-            </dl>
-            <Link
-              className="button-link"
-              to={`/cultivation/sects/${sect.id}/techniques/${technique.id}`}
-            >
-              进入知识点
-            </Link>
-          </article>
-        ))}
+              <dl>
+                <div>
+                  <dt>法力倾向</dt>
+                  <dd>{Math.round(technique.manaWeight * 100)}%</dd>
+                </div>
+                <div>
+                  <dt>神识倾向</dt>
+                  <dd>{Math.round(technique.insightWeight * 100)}%</dd>
+                </div>
+                <div>
+                  <dt>当前数值</dt>
+                  <dd>{currentValue}</dd>
+                </div>
+              </dl>
+              <Link
+                className="button-link"
+                to={`/cultivation/sects/${sect.id}/techniques/${technique.id}`}
+              >
+                进入知识点
+              </Link>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -477,6 +544,7 @@ type KnowledgePageProps = {
   sectName: string;
   techniqueName: string;
   techniqueId: string;
+  knowledgePointStatsById: Record<string, KnowledgePointPracticeStats>;
   practiceRecords: PracticeRecord[];
   practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[];
   onAddPracticeRecord: (
@@ -492,6 +560,7 @@ function KnowledgePage({
   sectName,
   techniqueName,
   techniqueId,
+  knowledgePointStatsById,
   practiceRecords,
   practiceRecordKnowledgePoints,
   onAddPracticeRecord,
@@ -626,7 +695,16 @@ function KnowledgePage({
                               toggleKnowledgePoint(knowledgePoint.id)
                             }
                           >
-                            {knowledgePoint.name}
+                            <span className="knowledge-point-row">
+                              <span>{knowledgePoint.name}</span>
+                              <span className="knowledge-point-stat">
+                                经验 {Math.round(
+                                  (knowledgePointStatsById[
+                                    knowledgePoint.id
+                                  ]?.totalExperience ?? 0) * 100,
+                                ) / 100}
+                              </span>
+                            </span>
                           </button>
                         </li>
                       ))}

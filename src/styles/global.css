@@ -561,10 +561,25 @@ h3 {
 .knowledge-tree li button {
   width: 100%;
   min-height: 38px;
+  padding: 8px 12px;
   border-color: #d2cabd;
   background: #fffdfa;
   color: #20242c;
   text-align: left;
+}
+
+.knowledge-point-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.knowledge-point-stat {
+  flex: 0 0 auto;
+  color: #6c655c;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .knowledge-tree li button:hover {
