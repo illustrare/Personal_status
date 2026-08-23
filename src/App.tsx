@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 import {
   PracticeRecordForm,
@@ -26,6 +26,13 @@ import {
   type SectPracticeStats,
   type TechniquePracticeStats,
 } from "./utils/practiceStats";
+import {
+  clearPracticeStorage,
+  loadPracticeRecordKnowledgePoints,
+  loadPracticeRecords,
+  savePracticeRecordKnowledgePoints,
+  savePracticeRecords,
+} from "./utils/practiceStorage";
 
 const eventPreviews = [
   {
@@ -83,13 +90,24 @@ function groupKnowledgePointsByChapter(
 }
 
 function App() {
-  const [practiceRecords, setPracticeRecords] = useState<PracticeRecord[]>([]);
+  const [practiceRecords, setPracticeRecords] =
+    useState<PracticeRecord[]>(loadPracticeRecords);
   const [practiceRecordKnowledgePoints, setPracticeRecordKnowledgePoints] =
-    useState<PracticeRecordKnowledgePoint[]>([]);
+    useState<PracticeRecordKnowledgePoint[]>(
+      loadPracticeRecordKnowledgePoints,
+    );
   const practiceStats = calculatePracticeStats(
     practiceRecords,
     practiceRecordKnowledgePoints,
   );
+
+  useEffect(() => {
+    savePracticeRecords(practiceRecords);
+  }, [practiceRecords]);
+
+  useEffect(() => {
+    savePracticeRecordKnowledgePoints(practiceRecordKnowledgePoints);
+  }, [practiceRecordKnowledgePoints]);
 
   function addPracticeRecord(
     record: PracticeRecord,
@@ -126,6 +144,12 @@ function App() {
     );
   }
 
+  function clearLocalPracticeData() {
+    clearPracticeStorage();
+    setPracticeRecords([]);
+    setPracticeRecordKnowledgePoints([]);
+  }
+
   return (
     <main className="app-shell">
       <Routes>
@@ -160,6 +184,7 @@ function App() {
               onAddPracticeRecord={addPracticeRecord}
               onDeletePracticeRecord={softDeletePracticeRecord}
               onRestorePracticeRecord={restorePracticeRecord}
+              onClearLocalPracticeData={clearLocalPracticeData}
             />
           }
         />
@@ -204,6 +229,7 @@ type KnowledgeRouteProps = {
   ) => void;
   onDeletePracticeRecord: (recordId: string) => void;
   onRestorePracticeRecord: (recordId: string) => void;
+  onClearLocalPracticeData: () => void;
 };
 
 function KnowledgeRoute({
@@ -213,6 +239,7 @@ function KnowledgeRoute({
   onAddPracticeRecord,
   onDeletePracticeRecord,
   onRestorePracticeRecord,
+  onClearLocalPracticeData,
 }: KnowledgeRouteProps) {
   const { sectId, techniqueId } = useParams();
   const sect = defaultSects.find((item) => item.id === sectId);
@@ -247,6 +274,7 @@ function KnowledgeRoute({
       onAddPracticeRecord={onAddPracticeRecord}
       onDeletePracticeRecord={onDeletePracticeRecord}
       onRestorePracticeRecord={onRestorePracticeRecord}
+      onClearLocalPracticeData={onClearLocalPracticeData}
     />
   );
 }
@@ -553,6 +581,7 @@ type KnowledgePageProps = {
   ) => void;
   onDeletePracticeRecord: (recordId: string) => void;
   onRestorePracticeRecord: (recordId: string) => void;
+  onClearLocalPracticeData: () => void;
 };
 
 function KnowledgePage({
@@ -566,6 +595,7 @@ function KnowledgePage({
   onAddPracticeRecord,
   onDeletePracticeRecord,
   onRestorePracticeRecord,
+  onClearLocalPracticeData,
 }: KnowledgePageProps) {
   const knowledgePoints = getDefaultKnowledgePointsByTechnique(techniqueId);
   const [knowledgePointAllocations, setKnowledgePointAllocations] = useState<
@@ -674,6 +704,13 @@ function KnowledgePage({
                 知识点属于当前功法，先按章节做文件夹式层级展示，后续再升级成可点亮的图形知识树。
               </p>
             </div>
+            <button
+              className="danger-button"
+              type="button"
+              onClick={onClearLocalPracticeData}
+            >
+              清空本地修炼记录
+            </button>
           </div>
 
           <div className="knowledge-tree">
