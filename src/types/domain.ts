@@ -217,6 +217,17 @@ export interface Breakthrough { // 定义突破信息
   updatedAt: string; // 更新时间，使用 ISO 字符串
 }
 
+export interface RealmRule { // 定义个人境界规则
+  level: number; // 境界等级，第一版为 1 到 13
+  name: string; // 境界显示名称
+  requiredTotalCultivation: number; // 达到该境界需要的个人总修为
+  requiredMana: number; // 达到该境界需要的最低法力
+  requiredInsight: number; // 达到该境界需要的最低神识
+  breakthroughRequired: boolean; // 是否需要突破任务
+  breakthroughTitle?: string; // 突破任务标题，可选
+  breakthroughDescription?: string; // 突破任务说明，可选
+}
+
 export interface RuleConfig { // 定义数值计算规则配置信息
   id: string; // 规则配置唯一 id
   exerciseBaseGain: number; // 练习基础收益

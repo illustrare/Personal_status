@@ -211,6 +211,105 @@ h3 {
   font-size: 28px;
 }
 
+.realm-section {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+  padding: 22px;
+  border: 1px solid #d6cec0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.realm-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.realm-summary div {
+  padding: 14px;
+  border: 1px solid #d6cec0;
+  border-radius: 8px;
+  background: #f7f3eb;
+}
+
+.realm-summary span,
+.breakthrough-list span {
+  display: block;
+  color: #6c655c;
+  font-size: 14px;
+}
+
+.realm-summary strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.realm-detail {
+  padding-top: 16px;
+  border-top: 1px solid #d6cec0;
+}
+
+.realm-detail dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.realm-detail dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.realm-detail dt {
+  color: #6c655c;
+  font-size: 14px;
+}
+
+.realm-detail dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+}
+
+.realm-alert {
+  margin: 14px 0 0;
+  color: #8a3429;
+  font-weight: 700;
+}
+
+.realm-breakthrough-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #d6cec0;
+}
+
+.realm-breakthrough-panel p {
+  color: #57524a;
+  line-height: 1.65;
+}
+
+.breakthrough-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breakthrough-list li {
+  padding: 10px;
+  border: 1px solid #d6cec0;
+  border-radius: 8px;
+  background: #f7f3eb;
+}
+
 .action-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -810,6 +909,11 @@ h3 {
   .technique-grid,
   .two-column-layout,
   .knowledge-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .realm-summary,
+  .realm-breakthrough-panel {
     grid-template-columns: 1fr;
   }
 

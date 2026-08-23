@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 import {
   PracticeRecordForm,
@@ -15,13 +15,20 @@ import {
   findTechniquePracticeDefaults,
 } from "./data/defaultTechniquePracticeDefaults";
 import { defaultTechniqueLayerRules } from "./data/defaultTechniqueLayerRules";
+import { defaultRealmRules } from "./data/defaultRealmRules";
 import { defaultTechniques } from "./data/defaultTechniques";
 import type {
+  Breakthrough,
+  BreakthroughStatus,
   KnowledgePoint,
   PracticeRecord,
   PracticeRecordKnowledgePoint,
   PracticeRecordKnowledgePointDraft,
 } from "./types/domain";
+import {
+  calculateRealmProgress,
+  type RealmProgress,
+} from "./utils/realmProgress";
 import {
   calculatePracticeStats,
   type KnowledgePointPracticeStats,
@@ -41,6 +48,10 @@ import {
   savePracticeRecordKnowledgePoints,
   savePracticeRecords,
 } from "./utils/practiceStorage";
+import {
+  loadBreakthroughs,
+  saveBreakthroughs,
+} from "./utils/breakthroughStorage";
 
 const eventPreviews = [
   {
@@ -106,6 +117,17 @@ function getReviewStatusLabel(status: KnowledgePointProgress["reviewStatus"]) {
   }
 }
 
+function getRealmProgressStatusLabel(status: RealmProgress["status"]): string {
+  switch (status) {
+    case "maxed":
+      return "已圆满";
+    case "breakthrough_blocked":
+      return "卡境";
+    case "training":
+      return "修炼中";
+  }
+}
+
 function groupById<TItem, TKey extends string>(
   items: TItem[],
   getKey: (item: TItem) => TKey,
@@ -161,9 +183,16 @@ function App() {
     useState<PracticeRecordKnowledgePoint[]>(
       loadPracticeRecordKnowledgePoints,
     );
+  const [breakthroughs, setBreakthroughs] =
+    useState<Breakthrough[]>(loadBreakthroughs);
   const practiceStats = calculatePracticeStats(
     practiceRecords,
     practiceRecordKnowledgePoints,
+  );
+  const realmProgress = calculateRealmProgress(
+    practiceStats.profileStats,
+    breakthroughs,
+    defaultRealmRules,
   );
   const practiceProgress = calculatePracticeProgress(
     defaultKnowledgePoints,
@@ -180,6 +209,10 @@ function App() {
   useEffect(() => {
     savePracticeRecordKnowledgePoints(practiceRecordKnowledgePoints);
   }, [practiceRecordKnowledgePoints]);
+
+  useEffect(() => {
+    saveBreakthroughs(breakthroughs);
+  }, [breakthroughs]);
 
   function addPracticeRecord(
     record: PracticeRecord,
@@ -222,12 +255,26 @@ function App() {
     setPracticeRecordKnowledgePoints([]);
   }
 
+  function addBreakthrough(breakthrough: Breakthrough) {
+    setBreakthroughs((currentBreakthroughs) => [
+      breakthrough,
+      ...currentBreakthroughs,
+    ]);
+  }
+
   return (
     <main className="app-shell">
       <Routes>
         <Route
           path="/"
-          element={<HomePage profileStats={practiceStats.profileStats} />}
+          element={
+            <HomePage
+              profileStats={practiceStats.profileStats}
+              realmProgress={realmProgress}
+              breakthroughs={breakthroughs}
+              onAddBreakthrough={addBreakthrough}
+            />
+          }
         />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/journeys" element={<JourneysPage />} />
@@ -367,15 +414,72 @@ function KnowledgeRoute({
 
 type HomePageProps = {
   profileStats: ProfilePracticeStats;
+  realmProgress: RealmProgress;
+  breakthroughs: Breakthrough[];
+  onAddBreakthrough: (breakthrough: Breakthrough) => void;
 };
 
-function HomePage({ profileStats }: HomePageProps) {
+function HomePage({
+  profileStats,
+  realmProgress,
+  breakthroughs,
+  onAddBreakthrough,
+}: HomePageProps) {
+  const nextBreakthroughRealm = realmProgress.nextRealm?.breakthroughRequired
+    ? realmProgress.nextRealm
+    : undefined;
+  const nextBreakthroughRecords = nextBreakthroughRealm
+    ? breakthroughs.filter(
+        (breakthrough) =>
+          breakthrough.targetRealmLevel === nextBreakthroughRealm.level,
+      )
+    : [];
+  const [breakthroughTitle, setBreakthroughTitle] = useState(
+    nextBreakthroughRealm?.breakthroughTitle ?? "",
+  );
+  const [breakthroughStatus, setBreakthroughStatus] =
+    useState<BreakthroughStatus>("completed");
+  const [breakthroughSummary, setBreakthroughSummary] = useState("");
   const displayedProfileStats = [
-    { label: "境界", value: "炼气一层" },
+    { label: "境界", value: realmProgress.currentRealm.name },
+    { label: "总修为", value: realmProgress.totalCultivation.toString() },
     { label: "法力", value: profileStats.totalMana.toString() },
     { label: "神识", value: profileStats.totalInsight.toString() },
-    { label: "神魂", value: profileStats.totalSoul.toString() },
   ];
+
+  function submitBreakthrough(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!nextBreakthroughRealm) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const title =
+      breakthroughTitle.trim() ||
+      nextBreakthroughRealm.breakthroughTitle ||
+      `${nextBreakthroughRealm.name}突破记录`;
+
+    onAddBreakthrough({
+      id: crypto.randomUUID(),
+      targetRealmLevel: nextBreakthroughRealm.level,
+      title,
+      description:
+        nextBreakthroughRealm.breakthroughDescription ??
+        "个人境界突破任务记录。",
+      requirements: [
+        `总修为达到 ${nextBreakthroughRealm.requiredTotalCultivation}`,
+        `法力达到 ${nextBreakthroughRealm.requiredMana}`,
+        `神识达到 ${nextBreakthroughRealm.requiredInsight}`,
+      ],
+      status: breakthroughStatus,
+      completedAt: breakthroughStatus === "completed" ? now : undefined,
+      summary: breakthroughSummary.trim() || undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+    setBreakthroughSummary("");
+  }
 
   return (
     <section className="page-panel">
@@ -397,6 +501,118 @@ function HomePage({ profileStats }: HomePageProps) {
           </article>
         ))}
       </div>
+
+      <section className="realm-section" aria-label="境界突破状态">
+        <div className="realm-summary">
+          <div>
+            <span>当前状态</span>
+            <strong>{getRealmProgressStatusLabel(realmProgress.status)}</strong>
+          </div>
+          <div>
+            <span>下一境界</span>
+            <strong>{realmProgress.nextRealm?.name ?? "已达最高境界"}</strong>
+          </div>
+          <div>
+            <span>神魂</span>
+            <strong>{profileStats.totalSoul}</strong>
+          </div>
+        </div>
+
+        {realmProgress.nextRealm && realmProgress.gap && (
+          <div className="realm-detail">
+            <h2>下一境界要求</h2>
+            <dl>
+              <div>
+                <dt>总修为</dt>
+                <dd>
+                  {realmProgress.nextRealm.requiredTotalCultivation}，还差{" "}
+                  {realmProgress.gap.totalCultivationGap}
+                </dd>
+              </div>
+              <div>
+                <dt>法力</dt>
+                <dd>
+                  {realmProgress.nextRealm.requiredMana}，还差{" "}
+                  {realmProgress.gap.manaGap}
+                </dd>
+              </div>
+              <div>
+                <dt>神识</dt>
+                <dd>
+                  {realmProgress.nextRealm.requiredInsight}，还差{" "}
+                  {realmProgress.gap.insightGap}
+                </dd>
+              </div>
+            </dl>
+            {realmProgress.status === "breakthrough_blocked" &&
+              realmProgress.nextRealm.breakthroughTitle && (
+                <p className="realm-alert">
+                  已达到数值门槛，等待完成：
+                  {realmProgress.nextRealm.breakthroughTitle}
+                </p>
+              )}
+          </div>
+        )}
+
+        {nextBreakthroughRealm && (
+          <div className="realm-breakthrough-panel">
+            <section>
+              <h2>{nextBreakthroughRealm.breakthroughTitle}</h2>
+              <p>
+                {nextBreakthroughRealm.breakthroughDescription}
+              </p>
+              {nextBreakthroughRecords.length > 0 ? (
+                <ul className="breakthrough-list">
+                  {nextBreakthroughRecords.map((breakthrough) => (
+                    <li key={breakthrough.id}>
+                      <strong>{breakthrough.title}</strong>
+                      <span>{getBreakthroughStatusLabel(breakthrough.status)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="progress-muted">当前还没有突破记录。</p>
+              )}
+            </section>
+
+            <form className="placeholder-form" onSubmit={submitBreakthrough}>
+              <label>
+                突破标题
+                <input
+                  value={breakthroughTitle}
+                  onChange={(event) => setBreakthroughTitle(event.target.value)}
+                />
+              </label>
+              <label>
+                突破状态
+                <select
+                  value={breakthroughStatus}
+                  onChange={(event) =>
+                    setBreakthroughStatus(
+                      event.target.value as BreakthroughStatus,
+                    )
+                  }
+                >
+                  <option value="completed">已完成</option>
+                  <option value="in_progress">进行中</option>
+                  <option value="failed">未通过</option>
+                  <option value="not_started">未开始</option>
+                </select>
+              </label>
+              <label>
+                结果总结
+                <textarea
+                  value={breakthroughSummary}
+                  onChange={(event) =>
+                    setBreakthroughSummary(event.target.value)
+                  }
+                />
+              </label>
+              <button type="submit">保存突破记录</button>
+            </form>
+          </div>
+        )}
+      </section>
 
       <div className="action-grid" aria-label="核心系统入口">
         <Link className="button-link" to="/cultivation">
@@ -429,6 +645,19 @@ function HomePage({ profileStats }: HomePageProps) {
       </div>
     </section>
   );
+}
+
+function getBreakthroughStatusLabel(status: BreakthroughStatus): string {
+  switch (status) {
+    case "not_started":
+      return "未开始";
+    case "in_progress":
+      return "进行中";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "未通过";
+  }
 }
 
 function EventsPage() {
