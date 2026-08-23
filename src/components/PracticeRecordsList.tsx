@@ -11,6 +11,7 @@ type PracticeRecordsListProps = {
   knowledgePoints: KnowledgePoint[];
   onDelete: (recordId: string) => void;
   onRestore: (recordId: string) => void;
+  onUpdateContent: (recordId: string, content: string) => void;
 };
 
 function formatRecordTime(isoTime: string): string {
@@ -29,6 +30,7 @@ export function PracticeRecordsList({
   knowledgePoints,
   onDelete,
   onRestore,
+  onUpdateContent,
 }: PracticeRecordsListProps) {
   const knowledgePointNameById = new Map(
     knowledgePoints.map(
@@ -103,7 +105,24 @@ export function PracticeRecordsList({
                     </div>
                   </dl>
 
-                  {record.content && <p>{record.content}</p>}
+                  <form
+                    className="summary-editor"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const formData = new FormData(event.currentTarget);
+                      const content = String(formData.get('content') ?? '');
+
+                      onUpdateContent(record.id, content);
+                    }}
+                  >
+                    <label>
+                      修炼总结
+                      <textarea name="content" defaultValue={record.content ?? ''} />
+                    </label>
+                    <button className="secondary-button" type="submit">
+                      保存修炼总结
+                    </button>
+                  </form>
                   {record.adjustmentReason && (
                     <p>手动调整原因：{record.adjustmentReason}</p>
                   )}

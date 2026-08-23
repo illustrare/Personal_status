@@ -20,6 +20,9 @@ import { defaultTechniques } from "./data/defaultTechniques";
 import type {
   Breakthrough,
   BreakthroughStatus,
+  Event,
+  EventStatus,
+  EventType,
   KnowledgePoint,
   PracticeRecord,
   PracticeRecordKnowledgePoint,
@@ -52,19 +55,7 @@ import {
   loadBreakthroughs,
   saveBreakthroughs,
 } from "./utils/breakthroughStorage";
-
-const eventPreviews = [
-  {
-    title: "数学分析期末复习",
-    meta: "考试试炼 · 14 天后",
-    description: "整理极限、连续、导数和积分的基础题型。",
-  },
-  {
-    title: "个人修炼系统第七步",
-    meta: "长期项目 · 进行中",
-    description: "完成首页、事件、游历、修炼和知识树静态页面。",
-  },
-];
+import { loadEvents, saveEvents } from "./utils/eventStorage";
 
 const journeyPreviews = [
   {
@@ -128,6 +119,77 @@ function getRealmProgressStatusLabel(status: RealmProgress["status"]): string {
   }
 }
 
+function getEventTypeLabel(eventType: EventType): string {
+  switch (eventType) {
+    case "exam":
+      return "期末考试";
+    case "course_project":
+      return "课程结业设计";
+    case "course_paper":
+      return "课程论文";
+    case "breakthrough_exam":
+      return "突破考试";
+    case "mock_test":
+      return "模拟测试";
+    case "long_project":
+      return "长期项目";
+    case "review_week":
+      return "复习周";
+    case "custom":
+      return "自定义试炼";
+  }
+}
+
+function getEventStatusLabel(status: EventStatus): string {
+  switch (status) {
+    case "not_started":
+      return "未开始";
+    case "in_progress":
+      return "进行中";
+    case "completed":
+      return "成功";
+    case "failed":
+      return "失败";
+  }
+}
+
+function getDaysUntilLabel(dateValue?: string): string {
+  if (!dateValue) {
+    return "无截止日期";
+  }
+
+  const dueDate = new Date(dateValue);
+  const today = new Date();
+  dueDate.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const dayDifference = Math.ceil(
+    (dueDate.getTime() - today.getTime()) / 86_400_000,
+  );
+
+  if (dayDifference > 0) {
+    return `${dayDifference} 天后`;
+  }
+
+  if (dayDifference === 0) {
+    return "今天截止";
+  }
+
+  return `已逾期 ${Math.abs(dayDifference)} 天`;
+}
+
+function sortEventsByDueDate(events: Event[]): Event[] {
+  return [...events].sort((firstEvent, secondEvent) => {
+    const firstTime = firstEvent.dueAt
+      ? new Date(firstEvent.dueAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    const secondTime = secondEvent.dueAt
+      ? new Date(secondEvent.dueAt).getTime()
+      : Number.POSITIVE_INFINITY;
+
+    return firstTime - secondTime;
+  });
+}
+
 function groupById<TItem, TKey extends string>(
   items: TItem[],
   getKey: (item: TItem) => TKey,
@@ -185,6 +247,7 @@ function App() {
     );
   const [breakthroughs, setBreakthroughs] =
     useState<Breakthrough[]>(loadBreakthroughs);
+  const [events, setEvents] = useState<Event[]>(loadEvents);
   const practiceStats = calculatePracticeStats(
     practiceRecords,
     practiceRecordKnowledgePoints,
@@ -213,6 +276,10 @@ function App() {
   useEffect(() => {
     saveBreakthroughs(breakthroughs);
   }, [breakthroughs]);
+
+  useEffect(() => {
+    saveEvents(events);
+  }, [events]);
 
   function addPracticeRecord(
     record: PracticeRecord,
@@ -249,6 +316,18 @@ function App() {
     );
   }
 
+  function updatePracticeRecordContent(recordId: string, content: string) {
+    const updatedAt = new Date().toISOString();
+
+    setPracticeRecords((currentRecords) =>
+      currentRecords.map((record) =>
+        record.id === recordId
+          ? { ...record, content: content.trim() || undefined, updatedAt }
+          : record,
+      ),
+    );
+  }
+
   function clearLocalPracticeData() {
     clearPracticeStorage();
     setPracticeRecords([]);
@@ -262,6 +341,142 @@ function App() {
     ]);
   }
 
+  function createPracticeRecordFromCompletedEvent(event: Event): {
+    record: PracticeRecord;
+    recordKnowledgePoints: PracticeRecordKnowledgePoint[];
+  } | undefined {
+    const techniqueId = event.techniqueIds[0];
+
+    if (
+      event.status !== "completed" ||
+      event.generatedPracticeRecordId ||
+      !event.sectId ||
+      !techniqueId
+    ) {
+      return undefined;
+    }
+
+    const now = new Date().toISOString();
+    const recordId = crypto.randomUUID();
+    const allocationWeight =
+      event.knowledgePointIds.length > 0 ? 1 / event.knowledgePointIds.length : 0;
+    const record: PracticeRecord = {
+      id: recordId,
+      sectId: event.sectId,
+      techniqueId,
+      recordType: event.eventType === "review_week" ? "review" : "test",
+      title: `完成事件：${event.title}`,
+      content: event.summary || event.targetRequirement,
+      durationMinutes: 0,
+      quantity: 1,
+      unit: "次",
+      difficultyMultiplier: event.difficulty,
+      suggestedExperienceGain: event.manaReward + event.insightReward,
+      experienceGain: event.manaReward + event.insightReward,
+      manaGain: event.manaReward,
+      insightGain: event.insightReward,
+      soulGain: event.soulReward,
+      valueSource: "manual",
+      adjustmentReason: "由成功事件结算生成。",
+      sourceEventId: event.id,
+      practicedAt: event.completedAt ?? now,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const recordKnowledgePoints = event.knowledgePointIds.map(
+      (knowledgePointId) => ({
+        id: crypto.randomUUID(),
+        recordId,
+        knowledgePointId,
+        allocationWeight,
+      }),
+    );
+
+    return { record, recordKnowledgePoints };
+  }
+
+  function saveEventWithOptionalPracticeRecord(event: Event) {
+    const eventPracticeRecord = createPracticeRecordFromCompletedEvent(event);
+    const eventToSave = eventPracticeRecord
+      ? {
+          ...event,
+          generatedPracticeRecordId: eventPracticeRecord.record.id,
+          updatedAt: eventPracticeRecord.record.updatedAt,
+        }
+      : event;
+
+    setEvents((currentEvents) => [eventToSave, ...currentEvents]);
+
+    if (eventPracticeRecord) {
+      addPracticeRecord(
+        eventPracticeRecord.record,
+        eventPracticeRecord.recordKnowledgePoints,
+      );
+    }
+  }
+
+  function completeEvent(eventId: string) {
+    const currentEvent = events.find((event) => event.id === eventId);
+
+    if (!currentEvent || currentEvent.generatedPracticeRecordId) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const completedEvent: Event = {
+      ...currentEvent,
+      status: "completed",
+      completedAt: now,
+      updatedAt: now,
+    };
+    const eventPracticeRecord =
+      createPracticeRecordFromCompletedEvent(completedEvent);
+
+    setEvents((currentEvents) =>
+      currentEvents.map((event) =>
+        event.id === eventId
+          ? {
+              ...completedEvent,
+              generatedPracticeRecordId:
+                eventPracticeRecord?.record.id ??
+                completedEvent.generatedPracticeRecordId,
+            }
+          : event,
+      ),
+    );
+
+    if (eventPracticeRecord) {
+      addPracticeRecord(
+        eventPracticeRecord.record,
+        eventPracticeRecord.recordKnowledgePoints,
+      );
+    }
+  }
+
+  function failEvent(eventId: string) {
+    const now = new Date().toISOString();
+
+    setEvents((currentEvents) =>
+      currentEvents.map((event) =>
+        event.id === eventId
+          ? { ...event, status: "failed", completedAt: now, updatedAt: now }
+          : event,
+      ),
+    );
+  }
+
+  function updateEventSummary(eventId: string, summary: string) {
+    const updatedAt = new Date().toISOString();
+
+    setEvents((currentEvents) =>
+      currentEvents.map((event) =>
+        event.id === eventId
+          ? { ...event, summary: summary.trim() || undefined, updatedAt }
+          : event,
+      ),
+    );
+  }
+
   return (
     <main className="app-shell">
       <Routes>
@@ -272,11 +487,23 @@ function App() {
               profileStats={practiceStats.profileStats}
               realmProgress={realmProgress}
               breakthroughs={breakthroughs}
+              events={events}
               onAddBreakthrough={addBreakthrough}
             />
           }
         />
-        <Route path="/events" element={<EventsPage />} />
+        <Route
+          path="/events"
+          element={
+            <EventsPage
+              events={events}
+              onAddEvent={saveEventWithOptionalPracticeRecord}
+              onCompleteEvent={completeEvent}
+              onFailEvent={failEvent}
+              onUpdateEventSummary={updateEventSummary}
+            />
+          }
+        />
         <Route path="/journeys" element={<JourneysPage />} />
         <Route
           path="/cultivation"
@@ -308,6 +535,7 @@ function App() {
               onAddPracticeRecord={addPracticeRecord}
               onDeletePracticeRecord={softDeletePracticeRecord}
               onRestorePracticeRecord={restorePracticeRecord}
+              onUpdatePracticeRecordContent={updatePracticeRecordContent}
               onClearLocalPracticeData={clearLocalPracticeData}
             />
           }
@@ -358,6 +586,7 @@ type KnowledgeRouteProps = {
   ) => void;
   onDeletePracticeRecord: (recordId: string) => void;
   onRestorePracticeRecord: (recordId: string) => void;
+  onUpdatePracticeRecordContent: (recordId: string, content: string) => void;
   onClearLocalPracticeData: () => void;
 };
 
@@ -370,6 +599,7 @@ function KnowledgeRoute({
   onAddPracticeRecord,
   onDeletePracticeRecord,
   onRestorePracticeRecord,
+  onUpdatePracticeRecordContent,
   onClearLocalPracticeData,
 }: KnowledgeRouteProps) {
   const { sectId, techniqueId } = useParams();
@@ -407,6 +637,7 @@ function KnowledgeRoute({
       onAddPracticeRecord={onAddPracticeRecord}
       onDeletePracticeRecord={onDeletePracticeRecord}
       onRestorePracticeRecord={onRestorePracticeRecord}
+      onUpdatePracticeRecordContent={onUpdatePracticeRecordContent}
       onClearLocalPracticeData={onClearLocalPracticeData}
     />
   );
@@ -416,6 +647,7 @@ type HomePageProps = {
   profileStats: ProfilePracticeStats;
   realmProgress: RealmProgress;
   breakthroughs: Breakthrough[];
+  events: Event[];
   onAddBreakthrough: (breakthrough: Breakthrough) => void;
 };
 
@@ -423,6 +655,7 @@ function HomePage({
   profileStats,
   realmProgress,
   breakthroughs,
+  events,
   onAddBreakthrough,
 }: HomePageProps) {
   const nextBreakthroughRealm = realmProgress.nextRealm?.breakthroughRequired
@@ -446,6 +679,17 @@ function HomePage({
     { label: "法力", value: profileStats.totalMana.toString() },
     { label: "神识", value: profileStats.totalInsight.toString() },
   ];
+  const upcomingEventItems = sortEventsByDueDate(
+    events.filter((event) => event.status !== "completed" && event.status !== "failed"),
+  )
+    .slice(0, 3)
+    .map((event) => ({
+      title: event.title,
+      meta: `${getEventTypeLabel(event.eventType)} · ${getDaysUntilLabel(
+        event.dueAt,
+      )}`,
+      description: event.targetRequirement || event.description,
+    }));
 
   function submitBreakthrough(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -630,7 +874,7 @@ function HomePage({
       </div>
 
       <div className="preview-grid">
-        <PreviewSection title="近期事件" items={eventPreviews.slice(0, 1)} />
+        <PreviewSection title="近期事件" items={upcomingEventItems} />
         <PreviewSection title="最近游历" items={journeyPreviews.slice(0, 1)} />
         <PreviewSection
           title="当前修炼"
@@ -660,7 +904,110 @@ function getBreakthroughStatusLabel(status: BreakthroughStatus): string {
   }
 }
 
-function EventsPage() {
+const eventTypeOptions: EventType[] = [
+  "exam",
+  "course_project",
+  "course_paper",
+  "breakthrough_exam",
+  "mock_test",
+  "long_project",
+  "review_week",
+  "custom",
+];
+
+type EventsPageProps = {
+  events: Event[];
+  onAddEvent: (event: Event) => void;
+  onCompleteEvent: (eventId: string) => void;
+  onFailEvent: (eventId: string) => void;
+  onUpdateEventSummary: (eventId: string, summary: string) => void;
+};
+
+function EventsPage({
+  events,
+  onAddEvent,
+  onCompleteEvent,
+  onFailEvent,
+  onUpdateEventSummary,
+}: EventsPageProps) {
+  const firstSectId = defaultSects[0]?.id ?? "";
+  const [title, setTitle] = useState("");
+  const [eventType, setEventType] = useState<EventType>("exam");
+  const [status, setStatus] = useState<EventStatus>("in_progress");
+  const [sectId, setSectId] = useState(firstSectId);
+  const techniqueOptions = defaultTechniques.filter(
+    (technique) => technique.sectId === sectId,
+  );
+  const [techniqueId, setTechniqueId] = useState(
+    techniqueOptions[0]?.id ?? "",
+  );
+  const selectedTechniqueId =
+    techniqueOptions.some((technique) => technique.id === techniqueId)
+      ? techniqueId
+      : techniqueOptions[0]?.id ?? "";
+  const knowledgePointOptions = defaultKnowledgePoints.filter(
+    (knowledgePoint) => knowledgePoint.techniqueId === selectedTechniqueId,
+  );
+  const [knowledgePointId, setKnowledgePointId] = useState(
+    knowledgePointOptions[0]?.id ?? "",
+  );
+  const selectedKnowledgePointId =
+    knowledgePointOptions.some(
+      (knowledgePoint) => knowledgePoint.id === knowledgePointId,
+    )
+      ? knowledgePointId
+      : knowledgePointOptions[0]?.id ?? "";
+  const [startAt, setStartAt] = useState("");
+  const [dueAt, setDueAt] = useState("");
+  const [targetRequirement, setTargetRequirement] = useState("");
+  const [summary, setSummary] = useState("");
+  const [manaReward, setManaReward] = useState(0);
+  const [insightReward, setInsightReward] = useState(0);
+  const [soulReward, setSoulReward] = useState(0);
+  const sortedEvents = sortEventsByDueDate(events);
+
+  function submitEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!title.trim() || !selectedTechniqueId) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    onAddEvent({
+      id: crypto.randomUUID(),
+      title: title.trim(),
+      description: targetRequirement.trim(),
+      eventType,
+      status,
+      sectId,
+      techniqueIds: [selectedTechniqueId],
+      knowledgePointIds: selectedKnowledgePointId
+        ? [selectedKnowledgePointId]
+        : [],
+      startAt: startAt || undefined,
+      dueAt: dueAt || undefined,
+      completedAt: status === "completed" ? now : undefined,
+      targetRequirement: targetRequirement.trim(),
+      difficulty: 1,
+      importance: 1,
+      manaReward,
+      insightReward,
+      soulReward,
+      summary: summary.trim() || undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    setTitle("");
+    setTargetRequirement("");
+    setSummary("");
+    setManaReward(0);
+    setInsightReward(0);
+    setSoulReward(0);
+  }
+
   return (
     <section className="page-panel">
       <PageToolbar title="事件界面" backTo="/" />
@@ -669,25 +1016,188 @@ function EventsPage() {
         <section className="content-section">
           <h2>事件记录</h2>
           <div className="record-list">
-            {eventPreviews.map((event) => (
-              <RecordCard key={event.title} item={event} />
-            ))}
+            {sortedEvents.length > 0 ? (
+              sortedEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onCompleteEvent={onCompleteEvent}
+                  onFailEvent={onFailEvent}
+                  onUpdateEventSummary={onUpdateEventSummary}
+                />
+              ))
+            ) : (
+              <p className="progress-muted">当前还没有事件记录。</p>
+            )}
           </div>
         </section>
 
         <aside className="side-panel">
           <h2>安排新事件</h2>
-          <div className="placeholder-form">
+          <form className="placeholder-form" onSubmit={submitEvent}>
             <label>
               事件名称
-              <input value="高等代数阶段测试" readOnly />
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              事件类型
+              <select
+                value={eventType}
+                onChange={(event) =>
+                  setEventType(event.target.value as EventType)
+                }
+              >
+                {eventTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {getEventTypeLabel(option)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              完成状态
+              <select
+                value={status}
+                onChange={(event) =>
+                  setStatus(event.target.value as EventStatus)
+                }
+              >
+                <option value="not_started">未开始</option>
+                <option value="in_progress">进行中</option>
+                <option value="completed">成功</option>
+                <option value="failed">失败</option>
+              </select>
+            </label>
+            <label>
+              关联门派
+              <select
+                value={sectId}
+                onChange={(event) => {
+                  const nextSectId = event.target.value;
+                  const nextTechniqueId =
+                    defaultTechniques.find(
+                      (technique) => technique.sectId === nextSectId,
+                    )?.id ?? "";
+                  const nextKnowledgePointId =
+                    defaultKnowledgePoints.find(
+                      (knowledgePoint) =>
+                        knowledgePoint.techniqueId === nextTechniqueId,
+                    )?.id ?? "";
+
+                  setSectId(nextSectId);
+                  setTechniqueId(nextTechniqueId);
+                  setKnowledgePointId(nextKnowledgePointId);
+                }}
+              >
+                {defaultSects.map((sect) => (
+                  <option key={sect.id} value={sect.id}>
+                    {sect.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              关联功法
+              <select
+                value={selectedTechniqueId}
+                onChange={(event) => {
+                  const nextTechniqueId = event.target.value;
+                  const nextKnowledgePointId =
+                    defaultKnowledgePoints.find(
+                      (knowledgePoint) =>
+                        knowledgePoint.techniqueId === nextTechniqueId,
+                    )?.id ?? "";
+
+                  setTechniqueId(nextTechniqueId);
+                  setKnowledgePointId(nextKnowledgePointId);
+                }}
+              >
+                {techniqueOptions.map((technique) => (
+                  <option key={technique.id} value={technique.id}>
+                    {technique.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              关联知识点
+              <select
+                value={selectedKnowledgePointId}
+                onChange={(event) => setKnowledgePointId(event.target.value)}
+              >
+                {knowledgePointOptions.map((knowledgePoint) => (
+                  <option key={knowledgePoint.id} value={knowledgePoint.id}>
+                    {knowledgePoint.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              开始日期
+              <input
+                type="date"
+                value={startAt}
+                onChange={(event) => setStartAt(event.target.value)}
+              />
             </label>
             <label>
               截止日期
-              <input value="2026-09-01" readOnly />
+              <input
+                type="date"
+                value={dueAt}
+                onChange={(event) => setDueAt(event.target.value)}
+              />
             </label>
-            <button type="button">保存事件</button>
-          </div>
+            <label>
+              目标要求
+              <textarea
+                value={targetRequirement}
+                onChange={(event) => setTargetRequirement(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              成功奖励法力
+              <input
+                type="number"
+                min="0"
+                value={manaReward}
+                onChange={(event) => setManaReward(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              成功奖励神识
+              <input
+                type="number"
+                min="0"
+                value={insightReward}
+                onChange={(event) =>
+                  setInsightReward(Number(event.target.value))
+                }
+              />
+            </label>
+            <label>
+              成功奖励神魂
+              <input
+                type="number"
+                min="0"
+                value={soulReward}
+                onChange={(event) => setSoulReward(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              结果总结
+              <textarea
+                value={summary}
+                onChange={(event) => setSummary(event.target.value)}
+              />
+            </label>
+            <button type="submit">保存事件</button>
+          </form>
         </aside>
       </div>
     </section>
@@ -942,6 +1452,7 @@ type KnowledgePageProps = {
   ) => void;
   onDeletePracticeRecord: (recordId: string) => void;
   onRestorePracticeRecord: (recordId: string) => void;
+  onUpdatePracticeRecordContent: (recordId: string, content: string) => void;
   onClearLocalPracticeData: () => void;
 };
 
@@ -958,6 +1469,7 @@ function KnowledgePage({
   onAddPracticeRecord,
   onDeletePracticeRecord,
   onRestorePracticeRecord,
+  onUpdatePracticeRecordContent,
   onClearLocalPracticeData,
 }: KnowledgePageProps) {
   const knowledgePoints = getDefaultKnowledgePointsByTechnique(techniqueId);
@@ -1129,6 +1641,7 @@ function KnowledgePage({
             knowledgePoints={knowledgePoints}
             onDelete={onDeletePracticeRecord}
             onRestore={onRestorePracticeRecord}
+            onUpdateContent={onUpdatePracticeRecordContent}
           />
         </section>
 
@@ -1363,9 +1876,11 @@ function PreviewSection({ title, items }: PreviewSectionProps) {
     <section className="content-section">
       <h2>{title}</h2>
       <div className="record-list">
-        {items.map((item) => (
-          <RecordCard key={item.title} item={item} />
-        ))}
+        {items.length > 0 ? (
+          items.map((item) => <RecordCard key={item.title} item={item} />)
+        ) : (
+          <p className="progress-muted">当前暂无记录。</p>
+        )}
       </div>
     </section>
   );
@@ -1381,6 +1896,89 @@ function RecordCard({ item }: RecordCardProps) {
       <span>{item.meta}</span>
       <h3>{item.title}</h3>
       <p>{item.description}</p>
+    </article>
+  );
+}
+
+type EventCardProps = {
+  event: Event;
+  onCompleteEvent: (eventId: string) => void;
+  onFailEvent: (eventId: string) => void;
+  onUpdateEventSummary: (eventId: string, summary: string) => void;
+};
+
+function EventCard({
+  event,
+  onCompleteEvent,
+  onFailEvent,
+  onUpdateEventSummary,
+}: EventCardProps) {
+  const [summaryDraft, setSummaryDraft] = useState(event.summary ?? "");
+  const sect = defaultSects.find((item) => item.id === event.sectId);
+  const techniqueNames = event.techniqueIds
+    .map(
+      (techniqueId) =>
+        defaultTechniques.find((technique) => technique.id === techniqueId)
+          ?.name,
+    )
+    .filter(Boolean)
+    .join("、");
+  const knowledgePointNames = event.knowledgePointIds
+    .map(
+      (knowledgePointId) =>
+        defaultKnowledgePoints.find(
+          (knowledgePoint) => knowledgePoint.id === knowledgePointId,
+        )?.name,
+    )
+    .filter(Boolean)
+    .join("、");
+  const canSettle =
+    event.status !== "completed" &&
+    event.status !== "failed" &&
+    !event.generatedPracticeRecordId;
+
+  return (
+    <article className="record-card">
+      <span>
+        {getEventTypeLabel(event.eventType)} · {getEventStatusLabel(event.status)} ·{" "}
+        {getDaysUntilLabel(event.dueAt)}
+      </span>
+      <h3>{event.title}</h3>
+      <p>{event.targetRequirement || event.description}</p>
+      <p>
+        {sect?.name ?? "未关联门派"}
+        {techniqueNames ? ` / ${techniqueNames}` : ""}
+        {knowledgePointNames ? ` / ${knowledgePointNames}` : ""}
+      </p>
+      {event.generatedPracticeRecordId && (
+        <p>已生成对应修炼记录。</p>
+      )}
+      <label className="summary-editor">
+        事件总结
+        <textarea
+          value={summaryDraft}
+          onChange={(event) => setSummaryDraft(event.target.value)}
+        />
+      </label>
+      {canSettle && (
+        <div className="inline-actions">
+          <button type="button" onClick={() => onCompleteEvent(event.id)}>
+            标记成功并结算
+          </button>
+          <button type="button" onClick={() => onFailEvent(event.id)}>
+            标记失败
+          </button>
+        </div>
+      )}
+      <div className="inline-actions">
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={() => onUpdateEventSummary(event.id, summaryDraft)}
+        >
+          保存事件总结
+        </button>
+      </div>
     </article>
   );
 }

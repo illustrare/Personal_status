@@ -98,6 +98,7 @@ export interface PracticeRecord { // 定义修炼记录信息
   soulGain: number; // 本次获得神魂
   valueSource: PracticeValueSource; // 收益采用功法默认值还是手动调整值
   adjustmentReason?: string; // 手动调整收益时的原因，可选
+  sourceEventId?: string; // 由成功事件结算生成时，记录来源事件 id
   practicedAt: string; // 实际修炼时间
   deletedAt?: string; // 软删除时间；存在时不参与统计
   createdAt: string; // 创建时间，使用 ISO 字符串
@@ -170,14 +171,17 @@ export interface Event { // 定义事件信息
   status: EventStatus; // 事件状态
   sectId?: string; // 关联门派 id，可选
   techniqueIds: string[]; // 关联功法 id 列表
+  knowledgePointIds: string[]; // 关联知识点 id 列表
   startAt?: string; // 开始时间，可选
   dueAt?: string; // 截止时间，可选
   completedAt?: string; // 完成时间，可选
+  targetRequirement: string; // 事件目标要求
   difficulty: number; // 事件难度系数
   importance: number; // 事件重要度系数
   manaReward: number; // 完成后奖励法力
   insightReward: number; // 完成后奖励神识
   soulReward: number; // 完成后奖励神魂
+  generatedPracticeRecordId?: string; // 成功事件对应生成的修炼记录 id，可选
   summary?: string; // 完成总结，可选
   createdAt: string; // 创建时间，使用 ISO 字符串
   updatedAt: string; // 更新时间，使用 ISO 字符串
@@ -283,7 +287,15 @@ export type ReviewRecallResult = "forgotten" | "effortful" | "recalled";
 
 export type TechniqueLayerRequirementType = "test" | "summary" | "output" | "review";
 
-export type EventType = "exam" | "course_project" | "breakthrough_exam" | "long_project" | "custom";
+export type EventType =
+  | "exam"
+  | "course_project"
+  | "course_paper"
+  | "breakthrough_exam"
+  | "mock_test"
+  | "long_project"
+  | "review_week"
+  | "custom";
 
 export type EventStatus = "not_started" | "in_progress" | "completed" | "failed";
 
