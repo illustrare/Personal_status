@@ -6,12 +6,15 @@ import {
 } from "./components/PracticeRecordForm";
 import { PracticeRecordsList } from "./components/PracticeRecordsList";
 import {
+  defaultKnowledgePoints,
   getDefaultKnowledgePointsByTechnique,
 } from "./data/defaultKnowledgePoints";
 import { defaultSects } from "./data/defaultSects";
 import {
+  defaultTechniquePracticeDefaults,
   findTechniquePracticeDefaults,
 } from "./data/defaultTechniquePracticeDefaults";
+import { defaultTechniqueLayerRules } from "./data/defaultTechniqueLayerRules";
 import { defaultTechniques } from "./data/defaultTechniques";
 import type {
   KnowledgePoint,
@@ -26,6 +29,11 @@ import {
   type SectPracticeStats,
   type TechniquePracticeStats,
 } from "./utils/practiceStats";
+import {
+  calculatePracticeProgress,
+  type KnowledgePointProgress,
+  type TechniqueProgress,
+} from "./utils/practiceProgress";
 import {
   clearPracticeStorage,
   loadPracticeRecordKnowledgePoints,
@@ -66,6 +74,63 @@ type KnowledgeChapter = {
   knowledgePoints: KnowledgePoint[];
 };
 
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function getTechniqueProgressStatusLabel(
+  status: TechniqueProgress["nextLayerStatus"],
+): string {
+  switch (status) {
+    case "maxed":
+      return "已圆满";
+    case "breakthrough_ready":
+      return "待突破";
+    case "blocked":
+      return "补覆盖";
+    case "training":
+      return "修炼中";
+  }
+}
+
+function getReviewStatusLabel(status: KnowledgePointProgress["reviewStatus"]) {
+  switch (status) {
+    case "not_scheduled":
+      return "未安排";
+    case "not_due":
+      return "未到期";
+    case "due":
+      return "到期";
+    case "overdue":
+      return "逾期";
+  }
+}
+
+function groupById<TItem, TKey extends string>(
+  items: TItem[],
+  getKey: (item: TItem) => TKey,
+): Record<TKey, TItem[]> {
+  return items.reduce<Record<TKey, TItem[]>>((itemsById, item) => {
+    const key = getKey(item);
+
+    return {
+      ...itemsById,
+      [key]: [...(itemsById[key] ?? []), item],
+    };
+  }, {} as Record<TKey, TItem[]>);
+}
+
+const practiceDefaultsByTechniqueId = Object.fromEntries(
+  defaultTechniquePracticeDefaults.map((practiceDefaults) => [
+    practiceDefaults.techniqueId,
+    practiceDefaults,
+  ]),
+);
+const layerRulesByTechniqueId = groupById(
+  defaultTechniqueLayerRules,
+  (layerRule) => layerRule.techniqueId,
+);
+
 function groupKnowledgePointsByChapter(
   knowledgePoints: KnowledgePoint[],
 ): KnowledgeChapter[] {
@@ -99,6 +164,13 @@ function App() {
   const practiceStats = calculatePracticeStats(
     practiceRecords,
     practiceRecordKnowledgePoints,
+  );
+  const practiceProgress = calculatePracticeProgress(
+    defaultKnowledgePoints,
+    practiceRecords,
+    practiceRecordKnowledgePoints,
+    practiceDefaultsByTechniqueId,
+    layerRulesByTechniqueId,
   );
 
   useEffect(() => {
@@ -171,6 +243,7 @@ function App() {
             <SectTechniquesRoute
               sectStatsById={practiceStats.sectStatsById}
               techniqueStatsById={practiceStats.techniqueStatsById}
+              techniqueProgressById={practiceProgress.techniqueProgressById}
             />
           }
         />
@@ -179,6 +252,10 @@ function App() {
           element={
             <KnowledgeRoute
               knowledgePointStatsById={practiceStats.knowledgePointStatsById}
+              knowledgePointProgressById={
+                practiceProgress.knowledgePointProgressById
+              }
+              techniqueProgressById={practiceProgress.techniqueProgressById}
               practiceRecords={practiceRecords}
               practiceRecordKnowledgePoints={practiceRecordKnowledgePoints}
               onAddPracticeRecord={addPracticeRecord}
@@ -197,11 +274,13 @@ function App() {
 type SectTechniquesRouteProps = {
   sectStatsById: Record<string, SectPracticeStats>;
   techniqueStatsById: Record<string, TechniquePracticeStats>;
+  techniqueProgressById: Record<string, TechniqueProgress>;
 };
 
 function SectTechniquesRoute({
   sectStatsById,
   techniqueStatsById,
+  techniqueProgressById,
 }: SectTechniquesRouteProps) {
   const { sectId } = useParams();
   const sect = defaultSects.find((item) => item.id === sectId);
@@ -215,12 +294,15 @@ function SectTechniquesRoute({
       sect={sect}
       sectStatsById={sectStatsById}
       techniqueStatsById={techniqueStatsById}
+      techniqueProgressById={techniqueProgressById}
     />
   );
 }
 
 type KnowledgeRouteProps = {
   knowledgePointStatsById: Record<string, KnowledgePointPracticeStats>;
+  knowledgePointProgressById: Record<string, KnowledgePointProgress>;
+  techniqueProgressById: Record<string, TechniqueProgress>;
   practiceRecords: PracticeRecord[];
   practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[];
   onAddPracticeRecord: (
@@ -234,6 +316,8 @@ type KnowledgeRouteProps = {
 
 function KnowledgeRoute({
   knowledgePointStatsById,
+  knowledgePointProgressById,
+  techniqueProgressById,
   practiceRecords,
   practiceRecordKnowledgePoints,
   onAddPracticeRecord,
@@ -269,6 +353,8 @@ function KnowledgeRoute({
       techniqueName={technique.name}
       techniqueId={technique.id}
       knowledgePointStatsById={knowledgePointStatsById}
+      knowledgePointProgressById={knowledgePointProgressById}
+      techniqueProgress={techniqueProgressById[technique.id]}
       practiceRecords={techniqueRecords}
       practiceRecordKnowledgePoints={techniqueRecordKnowledgePoints}
       onAddPracticeRecord={onAddPracticeRecord}
@@ -481,12 +567,14 @@ type TechniquesPageProps = {
   sect: (typeof defaultSects)[number];
   sectStatsById: Record<string, SectPracticeStats>;
   techniqueStatsById: Record<string, TechniquePracticeStats>;
+  techniqueProgressById: Record<string, TechniqueProgress>;
 };
 
 function TechniquesPage({
   sect,
   sectStatsById,
   techniqueStatsById,
+  techniqueProgressById,
 }: TechniquesPageProps) {
   const techniques = defaultTechniques.filter(
     (technique) => technique.sectId === sect.id,
@@ -530,15 +618,48 @@ function TechniquesPage({
       <div className="technique-grid">
         {techniques.map((technique) => {
           const techniqueStats = techniqueStatsById[technique.id];
+          const techniqueProgress = techniqueProgressById[technique.id];
           const currentValue = techniqueStats?.totalExperience ?? 0;
+          const currentLayer =
+            techniqueProgress?.currentLayer ?? technique.currentLayer;
+          const maxLayer =
+            techniqueProgress?.maxLayer || technique.maxLayer;
+          const nextLayerRule = techniqueProgress?.nextLayerRule;
+          const nextLayerLabel = nextLayerRule
+            ? `下一层 ${nextLayerRule.layer}`
+            : "已达最高层";
 
           return (
             <article className="technique-card" key={technique.id}>
               <div>
-                <span>第 {technique.currentLayer} / {technique.maxLayer} 层</span>
+                <span>第 {currentLayer} / {maxLayer} 层 · {nextLayerLabel}</span>
                 <h2>{technique.name}</h2>
                 <p>{technique.description}</p>
               </div>
+              {techniqueProgress ? (
+                <div className="technique-progress-summary">
+                  <div>
+                    <span>覆盖</span>
+                    <strong>{formatPercent(techniqueProgress.coverageRatio)}</strong>
+                  </div>
+                  <div>
+                    <span>核心覆盖</span>
+                    <strong>
+                      {formatPercent(techniqueProgress.coreCoverageRatio)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>突破状态</span>
+                    <strong>
+                      {getTechniqueProgressStatusLabel(
+                        techniqueProgress.nextLayerStatus,
+                      )}
+                    </strong>
+                  </div>
+                </div>
+              ) : (
+                <p className="progress-muted">当前功法尚未配置知识点进度规则。</p>
+              )}
               <dl>
                 <div>
                   <dt>法力倾向</dt>
@@ -553,6 +674,15 @@ function TechniquesPage({
                   <dd>{currentValue}</dd>
                 </div>
               </dl>
+              {techniqueProgress?.nextLayerGap && (
+                <p className="progress-muted">
+                  距离下一层：经验差{" "}
+                  {techniqueProgress.nextLayerGap.requiredExperienceGap}，覆盖差{" "}
+                  {formatPercent(
+                    techniqueProgress.nextLayerGap.requiredCoverageGap,
+                  )}
+                </p>
+              )}
               <Link
                 className="button-link"
                 to={`/cultivation/sects/${sect.id}/techniques/${technique.id}`}
@@ -573,6 +703,8 @@ type KnowledgePageProps = {
   techniqueName: string;
   techniqueId: string;
   knowledgePointStatsById: Record<string, KnowledgePointPracticeStats>;
+  knowledgePointProgressById: Record<string, KnowledgePointProgress>;
+  techniqueProgress?: TechniqueProgress;
   practiceRecords: PracticeRecord[];
   practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[];
   onAddPracticeRecord: (
@@ -590,6 +722,8 @@ function KnowledgePage({
   techniqueName,
   techniqueId,
   knowledgePointStatsById,
+  knowledgePointProgressById,
+  techniqueProgress,
   practiceRecords,
   practiceRecordKnowledgePoints,
   onAddPracticeRecord,
@@ -735,6 +869,12 @@ function KnowledgePage({
                             <span className="knowledge-point-row">
                               <span>{knowledgePoint.name}</span>
                               <span className="knowledge-point-stat">
+                                进度{" "}
+                                {formatPercent(
+                                  knowledgePointProgressById[knowledgePoint.id]
+                                    ?.totalProgressRatio ?? 0,
+                                )}{" "}
+                                /{" "}
                                 经验 {Math.round(
                                   (knowledgePointStatsById[
                                     knowledgePoint.id
@@ -765,7 +905,167 @@ function KnowledgePage({
 
         <aside className="side-panel">
           <h2>知识点详情</h2>
-          <p>点击知识点后，这里会显示说明、当前进度、最近修炼记录。</p>
+          <p>当前进度由修炼记录自动派生，练习、笔记、思考和到期复习分别封顶。</p>
+          {techniqueProgress && (
+            <section
+              className="practice-rule-summary"
+              aria-label={`${techniqueName}层数进度`}
+            >
+              <h3>功法层数进度</h3>
+              <dl>
+                <div>
+                  <dt>当前层数</dt>
+                  <dd>
+                    第 {techniqueProgress.currentLayer} /{" "}
+                    {techniqueProgress.maxLayer} 层
+                  </dd>
+                </div>
+                <div>
+                  <dt>经验</dt>
+                  <dd>{techniqueProgress.currentExperience}</dd>
+                </div>
+                <div>
+                  <dt>覆盖</dt>
+                  <dd>{formatPercent(techniqueProgress.coverageRatio)}</dd>
+                </div>
+                <div>
+                  <dt>核心覆盖</dt>
+                  <dd>{formatPercent(techniqueProgress.coreCoverageRatio)}</dd>
+                </div>
+                <div>
+                  <dt>状态</dt>
+                  <dd>
+                    {getTechniqueProgressStatusLabel(
+                      techniqueProgress.nextLayerStatus,
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              {techniqueProgress.nextLayerRule &&
+                techniqueProgress.nextLayerGap && (
+                  <div className="next-layer-panel">
+                    <h4>第 {techniqueProgress.nextLayerRule.layer} 层要求</h4>
+                    <ul>
+                      <li>
+                        经验门槛{" "}
+                        {techniqueProgress.nextLayerRule.requiredExperience}
+                        ，还差{" "}
+                        {techniqueProgress.nextLayerGap.requiredExperienceGap}
+                      </li>
+                      <li>
+                        覆盖要求{" "}
+                        {formatPercent(
+                          techniqueProgress.nextLayerRule
+                            .requiredCoverageRatio,
+                        )}
+                        ，还差{" "}
+                        {formatPercent(
+                          techniqueProgress.nextLayerGap.requiredCoverageGap,
+                        )}
+                      </li>
+                      <li>
+                        核心覆盖{" "}
+                        {formatPercent(
+                          techniqueProgress.nextLayerRule
+                            .requiredCoreCoverageRatio,
+                        )}
+                        ，还差{" "}
+                        {formatPercent(
+                          techniqueProgress.nextLayerGap
+                            .requiredCoreCoverageGap,
+                        )}
+                      </li>
+                      <li>
+                        薄弱点上限{" "}
+                        {formatPercent(
+                          techniqueProgress.nextLayerRule.allowedWeakPointRatio,
+                        )}
+                        ，超出{" "}
+                        {formatPercent(
+                          techniqueProgress.nextLayerGap.weakPointGap,
+                        )}
+                      </li>
+                    </ul>
+                    <h4>突破要求</h4>
+                    <ul>
+                      {techniqueProgress.nextLayerGap.pendingBreakthroughRequirements.map(
+                        (requirement) => (
+                          <li key={requirement.id}>{requirement.title}</li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )}
+            </section>
+          )}
+          <section className="practice-rule-summary" aria-label="知识点进度">
+            <h3>知识点进度概览</h3>
+            <div className="knowledge-progress-list">
+              {knowledgePoints.map((knowledgePoint) => {
+                const progress =
+                  knowledgePointProgressById[knowledgePoint.id];
+
+                return (
+                  <article key={knowledgePoint.id}>
+                    <h4>{knowledgePoint.name}</h4>
+                    {progress ? (
+                      <>
+                        <div className="progress-bar" aria-hidden="true">
+                          <span
+                            style={{
+                              width: formatPercent(progress.totalProgressRatio),
+                            }}
+                          />
+                        </div>
+                        <p>
+                          总进度 {formatPercent(progress.totalProgressRatio)}
+                          ，复习状态 {getReviewStatusLabel(progress.reviewStatus)}
+                        </p>
+                        <dl>
+                          <div>
+                            <dt>练习</dt>
+                            <dd>
+                              {formatPercent(
+                                progress.dimensions.exercise.progressRatio,
+                              )}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>笔记</dt>
+                            <dd>
+                              {formatPercent(
+                                progress.dimensions.note.progressRatio,
+                              )}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>思考</dt>
+                            <dd>
+                              {formatPercent(
+                                progress.dimensions.thinking.progressRatio,
+                              )}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>复习</dt>
+                            <dd>
+                              {progress.dimensions.review.isActive
+                                ? formatPercent(
+                                    progress.dimensions.review.progressRatio,
+                                  )
+                                : "未到期"}
+                            </dd>
+                          </div>
+                        </dl>
+                      </>
+                    ) : (
+                      <p>当前知识点尚未配置进度规则。</p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
           {practiceDefaults ? (
             <>
               <section

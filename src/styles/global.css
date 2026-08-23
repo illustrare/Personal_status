@@ -339,6 +339,32 @@ h3 {
   font-weight: 700;
 }
 
+.practice-rule-summary h4 {
+  margin: 12px 0 8px;
+  font-size: 14px;
+}
+
+.next-layer-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #d6cec0;
+}
+
+.next-layer-panel ul,
+.knowledge-progress-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.next-layer-panel li {
+  color: #57524a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .practice-rule-missing {
   margin: 18px 0;
   padding: 12px 0;
@@ -530,6 +556,32 @@ h3 {
   font-weight: 800;
 }
 
+.technique-progress-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.technique-progress-summary div {
+  padding: 10px;
+  border: 1px solid #d6cec0;
+  border-radius: 8px;
+  background: #f7f3eb;
+}
+
+.technique-progress-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 16px;
+}
+
+.progress-muted {
+  margin: 0;
+  color: #6c655c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .knowledge-tree {
   display: grid;
   gap: 14px;
@@ -580,6 +632,61 @@ h3 {
   color: #6c655c;
   font-size: 13px;
   font-weight: 700;
+}
+
+.knowledge-progress-list article {
+  padding: 10px 0;
+  border-top: 1px solid #e5ded2;
+}
+
+.knowledge-progress-list article:first-child {
+  border-top: 0;
+}
+
+.knowledge-progress-list h4,
+.knowledge-progress-list p {
+  margin: 0 0 8px;
+}
+
+.knowledge-progress-list h4 {
+  font-size: 14px;
+}
+
+.knowledge-progress-list p {
+  color: #57524a;
+  font-size: 13px;
+}
+
+.knowledge-progress-list dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.knowledge-progress-list dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.knowledge-progress-list dt,
+.knowledge-progress-list dd {
+  font-size: 13px;
+}
+
+.progress-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5ded2;
+}
+
+.progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2f5f62;
 }
 
 .knowledge-tree li button:hover {

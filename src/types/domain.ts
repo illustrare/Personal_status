@@ -127,6 +127,29 @@ export interface TechniquePracticeDefaults { // 每门功法独立的修炼表�
   updatedAt: string; // 更新时间，使用 ISO 字符串
 }
 
+export interface TechniqueLayerRule { // 功法层数规则，由 AI 默认生成，后续允许用户校准
+  id: string; // 层数规则唯一 id
+  techniqueId: string; // 所属功法 id
+  layer: number; // 目标层数，第一版为 1 到 6
+  requiredExperience: number; // 达到该层需要的累计功法经验
+  requiredCoverageRatio: number; // 该层知识点最低覆盖比例，0 到 1
+  requiredCoreCoverageRatio: number; // 核心知识点最低覆盖比例，0 到 1
+  allowedWeakPointRatio: number; // 允许仍然薄弱的知识点比例，0 到 1
+  breakthroughRequirements: TechniqueLayerBreakthroughRequirement[]; // 达到该层需要完成的突破要求
+  isAiGenerated: boolean; // 是否由 AI 默认生成
+  isUserCustomized: boolean; // 是否被用户手动校准过
+  createdAt: string; // 创建时间，使用 ISO 字符串
+  updatedAt: string; // 更新时间，使用 ISO 字符串
+}
+
+export interface TechniqueLayerBreakthroughRequirement { // 功法层数突破要求
+  id: string; // 要求唯一 id
+  title: string; // 要求标题
+  description: string; // 要求说明
+  requirementType: TechniqueLayerRequirementType; // 要求类型
+  isRequired: boolean; // 是否为硬性要求
+}
+
 export interface ReviewScheduleRule { // 功法默认复习计划
   intervalsDays: number[]; // 各阶段间隔天数，例如 2、7、21、60、180、365
   graceRatio: number; // 到期宽限比例，例如 0.2 表示前后约 20%
@@ -246,6 +269,8 @@ export type RuleUpdateScope = "all_records" | "default_records_only" | "future_r
 export type KnowledgeReviewStatus = "not_scheduled" | "not_due" | "due" | "overdue";
 
 export type ReviewRecallResult = "forgotten" | "effortful" | "recalled";
+
+export type TechniqueLayerRequirementType = "test" | "summary" | "output" | "review";
 
 export type EventType = "exam" | "course_project" | "breakthrough_exam" | "long_project" | "custom";
 
