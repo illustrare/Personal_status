@@ -24,6 +24,16 @@ function formatRecordTime(isoTime: string): string {
   });
 }
 
+function formatDurationMinutes(durationMinutes: number): string {
+  if (durationMinutes <= 180) {
+    return `${durationMinutes} 分钟`;
+  }
+
+  const hours = Math.round((durationMinutes / 60) * 10) / 10;
+
+  return Number.isInteger(hours) ? `${hours} 小时` : `${hours.toFixed(1)} 小时`;
+}
+
 export function PracticeRecordsList({
   records,
   recordKnowledgePoints,
@@ -87,6 +97,10 @@ export function PracticeRecordsList({
                       <dd>
                         {record.quantity} {record.unit}
                       </dd>
+                    </div>
+                    <div>
+                      <dt>耗时</dt>
+                      <dd>{formatDurationMinutes(record.durationMinutes)}</dd>
                     </div>
                     <div>
                       <dt>最终经验</dt>

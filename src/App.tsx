@@ -23,6 +23,9 @@ import type {
   Event,
   EventStatus,
   EventType,
+  Journey,
+  JourneyStatus,
+  JourneyType,
   KnowledgePoint,
   PracticeRecord,
   PracticeRecordKnowledgePoint,
@@ -56,19 +59,12 @@ import {
   saveBreakthroughs,
 } from "./utils/breakthroughStorage";
 import { loadEvents, saveEvents } from "./utils/eventStorage";
-
-const journeyPreviews = [
-  {
-    title: "《悉达多》阅读整理",
-    meta: "阅读 · 神魂 +20",
-    description: "记录人物精神变化、核心意象和可转化为写作素材的片段。",
-  },
-  {
-    title: "电影主题观察",
-    meta: "电影 · 待总结",
-    description: "补充镜头、叙事结构和情绪体验记录。",
-  },
-];
+import { loadJourneys, saveJourneys } from "./utils/journeyStorage";
+import {
+  calculateJourneySoulGain,
+  calculateJourneyStats,
+  type JourneyStats,
+} from "./utils/journeyStats";
 
 type KnowledgeChapter = {
   chapterCode: string;
@@ -153,6 +149,41 @@ function getEventStatusLabel(status: EventStatus): string {
   }
 }
 
+function getJourneyTypeLabel(journeyType: JourneyType): string {
+  switch (journeyType) {
+    case "reading":
+      return "阅读";
+    case "movie":
+      return "电影";
+    case "anime":
+      return "番剧";
+    case "game":
+      return "游戏";
+    case "music":
+      return "音乐";
+    case "exhibition":
+      return "展览";
+    case "theater":
+      return "戏剧";
+    case "custom":
+    case "other":
+      return "自定义";
+  }
+}
+
+function getJourneyStatusLabel(status: JourneyStatus): string {
+  switch (status) {
+    case "planned":
+      return "未开始";
+    case "in_progress":
+      return "进行中";
+    case "completed":
+      return "已完成";
+    case "abandoned":
+      return "搁置";
+  }
+}
+
 function getDaysUntilLabel(dateValue?: string): string {
   if (!dateValue) {
     return "无截止日期";
@@ -188,6 +219,14 @@ function sortEventsByDueDate(events: Event[]): Event[] {
 
     return firstTime - secondTime;
   });
+}
+
+function sortJourneysByUpdatedAt(journeys: Journey[]): Journey[] {
+  return [...journeys].sort(
+    (firstJourney, secondJourney) =>
+      new Date(secondJourney.updatedAt).getTime() -
+      new Date(firstJourney.updatedAt).getTime(),
+  );
 }
 
 function groupById<TItem, TKey extends string>(
@@ -248,12 +287,18 @@ function App() {
   const [breakthroughs, setBreakthroughs] =
     useState<Breakthrough[]>(loadBreakthroughs);
   const [events, setEvents] = useState<Event[]>(loadEvents);
+  const [journeys, setJourneys] = useState<Journey[]>(loadJourneys);
   const practiceStats = calculatePracticeStats(
     practiceRecords,
     practiceRecordKnowledgePoints,
   );
+  const journeyStats = calculateJourneyStats(journeys);
+  const profileStats = {
+    ...practiceStats.profileStats,
+    totalSoul: practiceStats.profileStats.totalSoul + journeyStats.totalSoul,
+  };
   const realmProgress = calculateRealmProgress(
-    practiceStats.profileStats,
+    profileStats,
     breakthroughs,
     defaultRealmRules,
   );
@@ -280,6 +325,10 @@ function App() {
   useEffect(() => {
     saveEvents(events);
   }, [events]);
+
+  useEffect(() => {
+    saveJourneys(journeys);
+  }, [journeys]);
 
   function addPracticeRecord(
     record: PracticeRecord,
@@ -477,6 +526,10 @@ function App() {
     );
   }
 
+  function addJourney(journey: Journey) {
+    setJourneys((currentJourneys) => [journey, ...currentJourneys]);
+  }
+
   return (
     <main className="app-shell">
       <Routes>
@@ -484,10 +537,12 @@ function App() {
           path="/"
           element={
             <HomePage
-              profileStats={practiceStats.profileStats}
+              profileStats={profileStats}
               realmProgress={realmProgress}
               breakthroughs={breakthroughs}
               events={events}
+              journeys={journeys}
+              journeyStats={journeyStats}
               onAddBreakthrough={addBreakthrough}
             />
           }
@@ -504,7 +559,16 @@ function App() {
             />
           }
         />
-        <Route path="/journeys" element={<JourneysPage />} />
+        <Route
+          path="/journeys"
+          element={
+            <JourneysPage
+              journeys={journeys}
+              journeyStats={journeyStats}
+              onAddJourney={addJourney}
+            />
+          }
+        />
         <Route
           path="/cultivation"
           element={
@@ -648,6 +712,8 @@ type HomePageProps = {
   realmProgress: RealmProgress;
   breakthroughs: Breakthrough[];
   events: Event[];
+  journeys: Journey[];
+  journeyStats: JourneyStats;
   onAddBreakthrough: (breakthrough: Breakthrough) => void;
 };
 
@@ -656,6 +722,8 @@ function HomePage({
   realmProgress,
   breakthroughs,
   events,
+  journeys,
+  journeyStats,
   onAddBreakthrough,
 }: HomePageProps) {
   const nextBreakthroughRealm = realmProgress.nextRealm?.breakthroughRequired
@@ -689,6 +757,13 @@ function HomePage({
         event.dueAt,
       )}`,
       description: event.targetRequirement || event.description,
+    }));
+  const recentJourneyItems = sortJourneysByUpdatedAt(journeys)
+    .slice(0, 3)
+    .map((journey) => ({
+      title: journey.title,
+      meta: `${getJourneyTypeLabel(journey.journeyType)} · 神魂 +${journey.soulGain}`,
+      description: journey.summary || `${journey.durationMinutes ?? 0} 分钟体验记录`,
     }));
 
   function submitBreakthrough(event: FormEvent<HTMLFormElement>) {
@@ -875,7 +950,10 @@ function HomePage({
 
       <div className="preview-grid">
         <PreviewSection title="近期事件" items={upcomingEventItems} />
-        <PreviewSection title="最近游历" items={journeyPreviews.slice(0, 1)} />
+        <PreviewSection
+          title={`最近游历 · ${journeyStats.journeyCount} 条`}
+          items={recentJourneyItems}
+        />
         <PreviewSection
           title="当前修炼"
           items={[
@@ -913,6 +991,24 @@ const eventTypeOptions: EventType[] = [
   "long_project",
   "review_week",
   "custom",
+];
+
+const journeyTypeOptions: JourneyType[] = [
+  "reading",
+  "movie",
+  "anime",
+  "game",
+  "music",
+  "exhibition",
+  "theater",
+  "custom",
+];
+
+const journeyStatusOptions: JourneyStatus[] = [
+  "planned",
+  "in_progress",
+  "completed",
+  "abandoned",
 ];
 
 type EventsPageProps = {
@@ -1204,7 +1300,108 @@ function EventsPage({
   );
 }
 
-function JourneysPage() {
+type JourneysPageProps = {
+  journeys: Journey[];
+  journeyStats: JourneyStats;
+  onAddJourney: (journey: Journey) => void;
+};
+
+function JourneysPage({ journeys, journeyStats, onAddJourney }: JourneysPageProps) {
+  const [workName, setWorkName] = useState("");
+  const [creator, setCreator] = useState("");
+  const [journeyType, setJourneyType] = useState<JourneyType>("reading");
+  const [status, setStatus] = useState<JourneyStatus>("completed");
+  const [durationMinutes, setDurationMinutes] = useState<number | "">("");
+  const [completionPercent, setCompletionPercent] = useState(100);
+  const [summary, setSummary] = useState("");
+  const [keywordsInput, setKeywordsInput] = useState("");
+  const [sectId, setSectId] = useState("");
+  const [techniqueId, setTechniqueId] = useState("");
+  const [startedAt, setStartedAt] = useState("");
+  const [completedAt, setCompletedAt] = useState("");
+  const [formError, setFormError] = useState("");
+  const selectedSect = defaultSects.find((sect) => sect.id === sectId);
+  const techniqueOptions = defaultTechniques.filter(
+    (technique) => technique.sectId === sectId,
+  );
+  const selectedTechniqueId =
+    techniqueOptions.some((technique) => technique.id === techniqueId)
+      ? techniqueId
+      : "";
+  const completionRatio = completionPercent / 100;
+  const previewSoulGain =
+    durationMinutes === ""
+      ? 0
+      : calculateJourneySoulGain(durationMinutes, completionRatio);
+  const sortedJourneys = sortJourneysByUpdatedAt(journeys);
+  const journeySectStats = Object.values(journeyStats.sectStatsById).sort(
+    (firstSect, secondSect) => secondSect.totalSoul - firstSect.totalSoul,
+  );
+
+  function submitJourney(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (workName.trim().length === 0) {
+      setFormError("请填写作品名称。");
+      return;
+    }
+
+    if (
+      durationMinutes === "" ||
+      durationMinutes < 1 ||
+      !Number.isFinite(durationMinutes)
+    ) {
+      setFormError("请填写至少 1 分钟的体验时长。");
+      return;
+    }
+
+    if (
+      completionPercent < 0 ||
+      completionPercent > 100 ||
+      !Number.isFinite(completionPercent)
+    ) {
+      setFormError("本次完成度需要在 0 到 100 之间。");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const keywords = keywordsInput
+      .split(/[,，、\s]+/)
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+    const soulGain = calculateJourneySoulGain(durationMinutes, completionRatio);
+    const title = `${getJourneyTypeLabel(journeyType)}：${workName.trim()}`;
+
+    onAddJourney({
+      id: crypto.randomUUID(),
+      title,
+      journeyType,
+      workName: workName.trim(),
+      creator: creator.trim() || undefined,
+      status,
+      startedAt: startedAt || undefined,
+      completedAt:
+        completedAt || (status === "completed" ? now : undefined),
+      durationMinutes,
+      completionRatio,
+      summary: summary.trim() || undefined,
+      keywords,
+      soulGain,
+      sectId: sectId || undefined,
+      techniqueId: selectedTechniqueId || undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    setWorkName("");
+    setCreator("");
+    setDurationMinutes("");
+    setCompletionPercent(100);
+    setSummary("");
+    setKeywordsInput("");
+    setFormError("");
+  }
+
   return (
     <section className="page-panel">
       <PageToolbar title="游历界面" backTo="/" />
@@ -1213,29 +1410,220 @@ function JourneysPage() {
         <section className="content-section">
           <h2>游历记录</h2>
           <div className="record-list">
-            {journeyPreviews.map((journey) => (
-              <RecordCard key={journey.title} item={journey} />
-            ))}
+            {sortedJourneys.length > 0 ? (
+              sortedJourneys.map((journey) => {
+                const sect = defaultSects.find((item) => item.id === journey.sectId);
+                const technique = defaultTechniques.find(
+                  (item) => item.id === journey.techniqueId,
+                );
+
+                return (
+                  <article className="record-card" key={journey.id}>
+                    <span>
+                      {getJourneyTypeLabel(journey.journeyType)} ·{" "}
+                      {getJourneyStatusLabel(journey.status)} · 神魂 +
+                      {journey.soulGain}
+                    </span>
+                    <h3>{journey.workName}</h3>
+                    <p>
+                      {journey.durationMinutes ?? 0} 分钟 · 本次完成度{" "}
+                      {Math.round(journey.completionRatio * 100)}%
+                    </p>
+                    {(sect || technique) && (
+                      <p>
+                        涉猎：{sect?.name ?? "未关联门派"}
+                        {technique ? ` · ${technique.name}` : ""}
+                      </p>
+                    )}
+                    {journey.summary && <p>{journey.summary}</p>}
+                    {journey.keywords.length > 0 && (
+                      <p>标签：{journey.keywords.join("、")}</p>
+                    )}
+                  </article>
+                );
+              })
+            ) : (
+              <p className="progress-muted">当前还没有游历记录。</p>
+            )}
           </div>
+
+          <section className="practice-rule-summary">
+            <h3>神魂涉猎统计</h3>
+            <dl>
+              <div>
+                <dt>总神魂</dt>
+                <dd>{journeyStats.totalSoul}</dd>
+              </div>
+              <div>
+                <dt>游历记录</dt>
+                <dd>{journeyStats.journeyCount} 条</dd>
+              </div>
+              {journeySectStats.map((sectStats) => {
+                const sect = defaultSects.find((item) => item.id === sectStats.sectId);
+
+                return (
+                  <div key={sectStats.sectId}>
+                    <dt>{sect?.name ?? sectStats.sectId}</dt>
+                    <dd>
+                      {sectStats.totalSoul} 神魂 / {sectStats.journeyCount} 条
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </section>
         </section>
 
         <aside className="side-panel">
           <h2>记录新游历</h2>
-          <div className="placeholder-form">
+          <form className="placeholder-form" onSubmit={submitJourney}>
             <label>
               作品名称
-              <input value="一部待记录的电影" readOnly />
+              <input
+                value={workName}
+                onChange={(event) => setWorkName(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              作者 / 导演 / 制作方
+              <input
+                value={creator}
+                onChange={(event) => setCreator(event.target.value)}
+              />
             </label>
             <label>
               游历类型
-              <input value="电影" readOnly />
+              <select
+                value={journeyType}
+                onChange={(event) =>
+                  setJourneyType(event.target.value as JourneyType)
+                }
+              >
+                {journeyTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {getJourneyTypeLabel(option)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              状态
+              <select
+                value={status}
+                onChange={(event) =>
+                  setStatus(event.target.value as JourneyStatus)
+                }
+              >
+                {journeyStatusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {getJourneyStatusLabel(option)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              体验时长（分钟）
+              <input
+                type="number"
+                min="1"
+                value={durationMinutes}
+                onChange={(event) =>
+                  setDurationMinutes(
+                    event.target.value === "" ? "" : Number(event.target.value),
+                  )
+                }
+                required
+              />
+            </label>
+            <label>
+              本次完成度（%）
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={completionPercent}
+                onChange={(event) =>
+                  setCompletionPercent(Number(event.target.value))
+                }
+              />
+            </label>
+            <label>
+              涉猎门派
+              <select
+                value={sectId}
+                onChange={(event) => {
+                  const nextSectId = event.target.value;
+                  const nextTechniqueId =
+                    defaultTechniques.find(
+                      (technique) => technique.sectId === nextSectId,
+                    )?.id ?? "";
+
+                  setSectId(nextSectId);
+                  setTechniqueId(nextTechniqueId);
+                }}
+              >
+                <option value="">暂不关联</option>
+                {defaultSects.map((sect) => (
+                  <option key={sect.id} value={sect.id}>
+                    {sect.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              涉猎功法
+              <select
+                value={selectedTechniqueId}
+                onChange={(event) => setTechniqueId(event.target.value)}
+                disabled={!selectedSect}
+              >
+                <option value="">暂不关联</option>
+                {techniqueOptions.map((technique) => (
+                  <option key={technique.id} value={technique.id}>
+                    {technique.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              开始日期
+              <input
+                type="date"
+                value={startedAt}
+                onChange={(event) => setStartedAt(event.target.value)}
+              />
+            </label>
+            <label>
+              完成日期
+              <input
+                type="date"
+                value={completedAt}
+                onChange={(event) => setCompletedAt(event.target.value)}
+              />
             </label>
             <label>
               感想摘要
-              <textarea value="这里以后填写体验、主题和神魂收益。" readOnly />
+              <textarea
+                value={summary}
+                onChange={(event) => setSummary(event.target.value)}
+              />
             </label>
-            <button type="button">保存游历</button>
-          </div>
+            <label>
+              标签
+              <input
+                value={keywordsInput}
+                onChange={(event) => setKeywordsInput(event.target.value)}
+                placeholder="用逗号或空格分隔"
+              />
+            </label>
+            <div className="experience-preview-total">
+              <span>预计神魂</span>
+              <strong>{previewSoulGain}</strong>
+            </div>
+            {formError && <p className="form-error">{formError}</p>}
+            <button type="submit">保存游历</button>
+          </form>
         </aside>
       </div>
     </section>

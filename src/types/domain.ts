@@ -197,6 +197,7 @@ export interface Journey { // 定义游历信息
   startedAt?: string; // 开始时间，可选
   completedAt?: string; // 完成时间，可选
   durationMinutes?: number; // 体验时长，单位分钟，可选
+  completionRatio: number; // 本次游历记录的完成度，0 到 1
   summary?: string; // 总结感想，可选
   keywords: string[]; // 标签或关键词
   soulGain: number; // 获得神魂
@@ -299,7 +300,16 @@ export type EventType =
 
 export type EventStatus = "not_started" | "in_progress" | "completed" | "failed";
 
-export type JourneyType = "reading" | "movie" | "anime" | "game" | "exhibition" | "other";
+export type JourneyType =
+  | "reading"
+  | "movie"
+  | "anime"
+  | "game"
+  | "music"
+  | "exhibition"
+  | "theater"
+  | "custom"
+  | "other";
 
 export type JourneyStatus = "planned" | "in_progress" | "completed" | "abandoned";
 
