@@ -1,6 +1,7 @@
 import type {
   PracticeRecord,
   PracticeRecordKnowledgePoint,
+  Technique,
 } from '../types/domain';
 
 export interface ProfilePracticeStats {
@@ -116,6 +117,30 @@ export function calculatePracticeStats(
   };
 }
 
+export const calculateHistoricalPracticeStats = calculatePracticeStats;
+
+export function calculateCurrentOwnershipPracticeStats(
+  practiceRecords: PracticeRecord[],
+  practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[],
+  techniques: Technique[],
+): PracticeStats {
+  return {
+    profileStats: calculateProfilePracticeStats(practiceRecords),
+    sectStatsById: calculateCurrentOwnershipSectPracticeStatsById(
+      practiceRecords,
+      techniques,
+    ),
+    techniqueStatsById: calculateCurrentOwnershipTechniquePracticeStatsById(
+      practiceRecords,
+      techniques,
+    ),
+    knowledgePointStatsById: calculateKnowledgePointPracticeStatsById(
+      practiceRecords,
+      practiceRecordKnowledgePoints,
+    ),
+  };
+}
+
 export function calculateKnowledgePointPracticeStatsById(
   practiceRecords: PracticeRecord[],
   practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[],
@@ -185,6 +210,80 @@ export function calculateTechniquePracticeStatsById(
       [record.techniqueId]: {
         techniqueId: record.techniqueId,
         sectId: record.sectId,
+        totalExperience: currentStats.totalExperience + record.experienceGain,
+        totalMana: currentStats.totalMana + record.manaGain,
+        totalInsight: currentStats.totalInsight + record.insightGain,
+        totalSoul: currentStats.totalSoul + record.soulGain,
+        recordCount: currentStats.recordCount + 1,
+      },
+    };
+  }, {});
+}
+
+export function calculateCurrentOwnershipSectPracticeStatsById(
+  practiceRecords: PracticeRecord[],
+  techniques: Technique[],
+): Record<string, SectPracticeStats> {
+  const currentSectIdByTechniqueId = new Map(
+    techniques.map((technique) => [technique.id, technique.sectId]),
+  );
+
+  return getActivePracticeRecords(practiceRecords).reduce<
+    Record<string, SectPracticeStats>
+  >((statsById, record) => {
+    const sectId =
+      currentSectIdByTechniqueId.get(record.techniqueId) ?? record.sectId;
+    const currentStats = statsById[sectId] ?? {
+      sectId,
+      totalExperience: 0,
+      totalMana: 0,
+      totalInsight: 0,
+      totalSoul: 0,
+      recordCount: 0,
+    };
+
+    return {
+      ...statsById,
+      [sectId]: {
+        sectId,
+        totalExperience: currentStats.totalExperience + record.experienceGain,
+        totalMana: currentStats.totalMana + record.manaGain,
+        totalInsight: currentStats.totalInsight + record.insightGain,
+        totalSoul: currentStats.totalSoul + record.soulGain,
+        recordCount: currentStats.recordCount + 1,
+      },
+    };
+  }, {});
+}
+
+export function calculateCurrentOwnershipTechniquePracticeStatsById(
+  practiceRecords: PracticeRecord[],
+  techniques: Technique[],
+): Record<string, TechniquePracticeStats> {
+  const currentSectIdByTechniqueId = new Map(
+    techniques.map((technique) => [technique.id, technique.sectId]),
+  );
+
+  return getActivePracticeRecords(practiceRecords).reduce<
+    Record<string, TechniquePracticeStats>
+  >((statsById, record) => {
+    const sectId =
+      currentSectIdByTechniqueId.get(record.techniqueId) ?? record.sectId;
+    const currentStats = statsById[record.techniqueId] ?? {
+      techniqueId: record.techniqueId,
+      sectId,
+      totalExperience: 0,
+      totalMana: 0,
+      totalInsight: 0,
+      totalSoul: 0,
+      recordCount: 0,
+    };
+
+    return {
+      ...statsById,
+      [record.techniqueId]: {
+        techniqueId: record.techniqueId,
+        sectId,
         totalExperience: currentStats.totalExperience + record.experienceGain,
         totalMana: currentStats.totalMana + record.manaGain,
         totalInsight: currentStats.totalInsight + record.insightGain,

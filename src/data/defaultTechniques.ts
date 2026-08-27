@@ -15,6 +15,9 @@ type TechniqueSeed = Pick<
   | 'order'
 > & {
   courseValueCoefficient?: number;
+  kind?: Technique['kind'];
+  isSystem?: boolean;
+  maxLayer?: number;
 };
 
 function createTechnique(seed: TechniqueSeed): Technique {
@@ -22,10 +25,12 @@ function createTechnique(seed: TechniqueSeed): Technique {
     ...seed,
     courseValueCoefficient: seed.courseValueCoefficient ?? 1,
     currentLayer: 0,
-    maxLayer: 6,
+    maxLayer: seed.maxLayer ?? 6,
     value: 0,
     currentValue: 0,
     nextLayerRequiredValue: 0,
+    kind: seed.kind ?? 'structured',
+    isSystem: seed.isSystem ?? false,
     isDefault: true,
     createdAt: DEFAULT_CREATED_AT,
     updatedAt: DEFAULT_CREATED_AT,
@@ -469,4 +474,23 @@ export const defaultTechniques: Technique[] = [
     prerequisiteTechniqueIds: [],
     order: 3,
   }),
+  createTechnique({
+    id: 'standalone_knowledge',
+    sectId: 'system_standalone',
+    name: '秘术合集',
+    description: '承载不需要建立完整功法的零散知识点。',
+    courseValueCoefficient: 1,
+    manaWeight: 0.5,
+    insightWeight: 0.5,
+    soulWeight: 0,
+    prerequisiteTechniqueIds: [],
+    order: 999,
+    kind: 'standalone_container',
+    isSystem: true,
+    maxLayer: 0,
+  }),
 ];
+
+export const visibleDefaultTechniques = defaultTechniques.filter(
+  (technique) => !technique.isSystem,
+);

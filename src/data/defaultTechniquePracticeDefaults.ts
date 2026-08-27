@@ -9,7 +9,7 @@ const DEFAULT_CREATED_AT = '2026-08-04T00:00:00.000Z';
 const DEFAULT_TEST_BASE_EXPERIENCE = 30;
 const DEFAULT_REVIEW_INTERVALS_DAYS = [2, 7, 21, 60, 180, 365];
 
-function createMathTechniquePracticeDefaults(
+function createTechniquePracticeDefaults(
   technique: Technique,
 ): TechniquePracticeDefaults {
   const quantityDraft = generatePracticeQuantityDraft(
@@ -60,8 +60,12 @@ function createMathTechniquePracticeDefaults(
 
 export const defaultTechniquePracticeDefaults: TechniquePracticeDefaults[] =
   defaultTechniques
-    .filter((technique) => technique.sectId === 'math')
-    .map(createMathTechniquePracticeDefaults);
+    .filter(
+      (technique) =>
+        technique.sectId === 'math' ||
+        technique.kind === 'standalone_container',
+    )
+    .map(createTechniquePracticeDefaults);
 
 export function findTechniquePracticeDefaults(
   techniqueId: string,

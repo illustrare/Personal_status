@@ -10,6 +10,11 @@ import type {
   TechniquePracticeDefaults,
 } from "../types/domain";
 import { getActivePracticeRecords } from "./practiceStats";
+import {
+  getActiveKnowledgePoints,
+  resolveKnowledgePointOwnership,
+  type KnowledgeOwnershipIndex,
+} from "./knowledgeOwnership";
 
 export type KnowledgeProgressDimensionName =
   | "exercise"
@@ -428,7 +433,7 @@ function getTechniqueCurrentLayer(
 
 function calculateTechniqueProgress(
   techniqueId: string,
-  knowledgePoints: KnowledgePoint[],
+  techniqueKnowledgePoints: KnowledgePoint[],
   knowledgePointProgressById: Record<string, KnowledgePointProgress>,
   records: PracticeRecord[],
   layerRules: TechniqueLayerRule[],
@@ -436,9 +441,6 @@ function calculateTechniqueProgress(
   const currentExperience = records
     .filter((record) => record.techniqueId === techniqueId)
     .reduce((total, record) => total + record.experienceGain, 0);
-  const techniqueKnowledgePoints = knowledgePoints.filter(
-    (knowledgePoint) => knowledgePoint.techniqueId === techniqueId,
-  );
   const coreKnowledgePoints = techniqueKnowledgePoints.filter(
     (knowledgePoint) => knowledgePoint.importance >= CORE_IMPORTANCE_THRESHOLD,
   );
@@ -525,17 +527,25 @@ function calculateTechniqueProgress(
 
 export function calculatePracticeProgress(
   knowledgePoints: KnowledgePoint[],
+  ownershipIndex: KnowledgeOwnershipIndex,
   practiceRecords: PracticeRecord[],
   practiceRecordKnowledgePoints: PracticeRecordKnowledgePoint[],
   practiceDefaultsByTechniqueId: Record<string, TechniquePracticeDefaults>,
   layerRulesByTechniqueId: Record<string, TechniqueLayerRule[]>,
 ): PracticeProgress {
   const activeRecords = getActivePracticeRecords(practiceRecords);
-  const knowledgePointProgressById = knowledgePoints.reduce<
+  const activeKnowledgePoints = getActiveKnowledgePoints(knowledgePoints);
+  const knowledgePointProgressById = activeKnowledgePoints.reduce<
     Record<string, KnowledgePointProgress>
   >((progressById, knowledgePoint) => {
+    const techniqueId = resolveKnowledgePointOwnership(
+      knowledgePoint,
+      ownershipIndex,
+    )?.technique.id;
     const practiceDefaults =
-      practiceDefaultsByTechniqueId[knowledgePoint.techniqueId];
+      techniqueId === undefined
+        ? undefined
+        : practiceDefaultsByTechniqueId[techniqueId];
 
     if (!practiceDefaults) {
       return progressById;
@@ -552,7 +562,15 @@ export function calculatePracticeProgress(
     };
   }, {});
   const techniqueIds = Array.from(
-    new Set(knowledgePoints.map((knowledgePoint) => knowledgePoint.techniqueId)),
+    new Set(
+      activeKnowledgePoints.flatMap((knowledgePoint) => {
+        const techniqueId = resolveKnowledgePointOwnership(
+          knowledgePoint,
+          ownershipIndex,
+        )?.technique.id;
+        return techniqueId ? [techniqueId] : [];
+      }),
+    ),
   );
   const techniqueProgressById = techniqueIds.reduce<
     Record<string, TechniqueProgress>
@@ -567,7 +585,11 @@ export function calculatePracticeProgress(
       ...progressById,
       [techniqueId]: calculateTechniqueProgress(
         techniqueId,
-        knowledgePoints,
+        activeKnowledgePoints.filter(
+          (knowledgePoint) =>
+            resolveKnowledgePointOwnership(knowledgePoint, ownershipIndex)
+              ?.technique.id === techniqueId,
+        ),
         knowledgePointProgressById,
         activeRecords,
         layerRules,

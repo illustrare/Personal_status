@@ -1,4 +1,4 @@
-import type { Journey } from "../types/domain";
+import type { Journey, JourneySoulRule, JourneyType } from "../types/domain";
 
 export interface JourneySectStats {
   sectId: string;
@@ -12,8 +12,6 @@ export interface JourneyStats {
   sectStatsById: Record<string, JourneySectStats>;
 }
 
-const JOURNEY_SOUL_PER_HOUR = 60;
-
 function roundToTwo(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -25,13 +23,31 @@ function clampCompletionRatio(completionRatio: number): number {
 export function calculateJourneySoulGain(
   durationMinutes: number,
   completionRatio: number,
+  journeyType: JourneyType,
+  soulRule: JourneySoulRule,
 ): number {
   const safeDurationMinutes = Math.max(durationMinutes, 0);
   const safeCompletionRatio = clampCompletionRatio(completionRatio);
-
-  return roundToTwo(
-    (safeDurationMinutes / 60) * JOURNEY_SOUL_PER_HOUR * safeCompletionRatio,
+  const typeMultiplier = Math.max(
+    soulRule.journeyTypeMultipliers[journeyType] ?? 1,
+    0,
   );
+  const completionMultiplier = soulRule.completionRatioEnabled
+    ? safeCompletionRatio
+    : 1;
+  const rawSoulGain =
+    (safeDurationMinutes / 60) *
+    Math.max(soulRule.soulPerHour, 0) *
+    typeMultiplier *
+    completionMultiplier;
+  const minimumSoulGain = Math.max(soulRule.minimumSoulGain, 0);
+  const maximumSoulGain = soulRule.maximumSoulGain;
+  const cappedSoulGain =
+    maximumSoulGain === undefined
+      ? rawSoulGain
+      : Math.min(rawSoulGain, Math.max(maximumSoulGain, minimumSoulGain));
+
+  return roundToTwo(Math.max(cappedSoulGain, minimumSoulGain));
 }
 
 export function calculateJourneyStats(journeys: Journey[]): JourneyStats {

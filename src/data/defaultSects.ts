@@ -12,6 +12,7 @@ export const defaultSects: Sect[] = [
     soul: 0,
     sectValue: 0,
     isDefault: true,
+    isSystem: false,
     order: 1,
     createdAt: DEFAULT_CREATED_AT,
     updatedAt: DEFAULT_CREATED_AT,
@@ -25,6 +26,7 @@ export const defaultSects: Sect[] = [
     soul: 0,
     sectValue: 0,
     isDefault: true,
+    isSystem: false,
     order: 2,
     createdAt: DEFAULT_CREATED_AT,
     updatedAt: DEFAULT_CREATED_AT,
@@ -38,8 +40,27 @@ export const defaultSects: Sect[] = [
     soul: 0,
     sectValue: 0,
     isDefault: true,
+    isSystem: false,
     order: 3,
     createdAt: DEFAULT_CREATED_AT,
     updatedAt: DEFAULT_CREATED_AT,
   },
+  {
+    id: 'system_standalone',
+    name: '独立知识系统容器',
+    description: '用于承载独立功法和秘术合集，界面不作为普通门派展示。',
+    mana: 0,
+    insight: 0,
+    soul: 0,
+    sectValue: 0,
+    isDefault: true,
+    isSystem: true,
+    order: 999,
+    createdAt: DEFAULT_CREATED_AT,
+    updatedAt: DEFAULT_CREATED_AT,
+  },
 ];
+
+export const visibleDefaultSects = defaultSects.filter(
+  (sect) => !sect.isSystem,
+);

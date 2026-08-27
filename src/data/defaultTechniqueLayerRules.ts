@@ -129,7 +129,9 @@ function createTechniqueLayerRules(
 }
 
 export const defaultTechniqueLayerRules: TechniqueLayerRule[] =
-  defaultTechniques.flatMap(createTechniqueLayerRules);
+  defaultTechniques
+    .filter((technique) => technique.kind === "structured")
+    .flatMap(createTechniqueLayerRules);
 
 export function getDefaultTechniqueLayerRules(
   techniqueId: string,
